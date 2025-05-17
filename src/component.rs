@@ -30,9 +30,19 @@ impl ComponentManger {
         self.components.get(&component)
     }
 
-    pub(crate) fn component_exists<T: Component>(&self) -> bool {
-        let comp = TypeId::of::<T>();
-        self.components.contains_key(&comp)
+    pub(crate) fn component_exists(&self, comp: &TypeId) -> bool {
+        self.components.contains_key(comp)
+    }
+}
+
+impl From<&[TypeId]> for ComponentManger {
+    fn from(value: &[TypeId]) -> Self {
+        let mut components_manager = Self::default();
+        for comp in value {
+            assert!(!components_manager.component_exists(comp));
+            components_manager.register_component_unchecked(*comp);
+        }
+        components_manager
     }
 }
 

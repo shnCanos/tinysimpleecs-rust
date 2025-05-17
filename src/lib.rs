@@ -1,4 +1,6 @@
-use component::Component;
+use std::any::TypeId;
+
+use component::{Component, ComponentManger};
 use entity::EntityId;
 use tinysimpleecs_rust_macros::Component;
 
@@ -15,6 +17,13 @@ struct World {
 impl World {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_entities(components: &[TypeId]) -> Self {
+        Self {
+            components_manager: components.into(),
+            ..Default::default()
+        }
     }
 
     pub fn spawn<T: component::Bundle>(&mut self, components: T) -> EntityId {
@@ -34,6 +43,12 @@ impl Commands {
     pub fn spawn<T: component::Bundle>(tospawn: T) {}
 }
 
+macro_rules! entities {
+    ($($entity:ident),*) => {
+        &[$(::std::any::TypeId::of::<$entity>()),*]
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -49,7 +64,22 @@ mod tests {
         let mut world = World::new();
         let id = world.spawn((Banana {}, Banana2(23)));
         assert!(world.entity_manager.entity_exists(id));
-        assert!(world.components_manager.component_exists::<Banana>());
-        assert!(world.components_manager.component_exists::<Banana2>());
+        assert!(world
+            .components_manager
+            .component_exists(&TypeId::of::<Banana>()));
+        assert!(world
+            .components_manager
+            .component_exists(&TypeId::of::<Banana2>()));
+    }
+
+    #[test]
+    fn add_entities_macro() {
+        let world = World::with_entities(entities!(Banana, Banana2));
+        assert!(world
+            .components_manager
+            .component_exists(&TypeId::of::<Banana>()));
+        assert!(world
+            .components_manager
+            .component_exists(&TypeId::of::<Banana2>()));
     }
 }
