@@ -1,0 +1,13 @@
+[package]
+name = "tinysimpleecs-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tinysimpleecs-rust-macros = { path = "./tinysimpleecs-rust-macros" }
+log = "0.4"
+variadics_please = "1.1"
+
+[dependencies.bit-set]
+version = "0.8"
+features = ["serde"]
