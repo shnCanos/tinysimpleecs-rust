@@ -1,14 +1,9 @@
-use std::{
-    any::{Any, TypeId},
-    fmt::Debug,
-};
-
 use bit_set::BitSet;
 
-use crate::component::{self, Bundle};
+use crate::component;
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) struct EntityId(usize);
+struct EntityId(usize);
 
 impl EntityId {
     fn new(id: usize) -> Self {
@@ -16,15 +11,14 @@ impl EntityId {
     }
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct EntityComponents(Box<[Box<dyn component::Component>]>);
+#[derive(Default)]
+struct EntityComponents(Box<[Box<dyn component::Component>]>);
 
-impl<T: Bundle> From<T> for EntityComponents {
+impl<T: component::Bundle> From<T> for EntityComponents {
     fn from(value: T) -> Self {
         Self(value.into_array())
     }
 }
-#[derive(Debug)]
 pub(crate) struct EntityBitmask(BitSet);
 
 impl EntityBitmask {
@@ -34,24 +28,13 @@ impl EntityBitmask {
 }
 
 impl EntityBitmask {
-    pub(crate) fn from_components(
-        components: &EntityComponents,
-        components_manager: &mut component::ComponentManger,
+    pub(crate) fn from_bundle<T: component::Bundle>(
+        components: EntityComponents,
+        components_manager: component::ComponentManger,
     ) -> Self {
-        let component_types: Vec<_> = components.0.iter().map(|comp| (**comp).type_id()).collect();
-        let mut bit_indexes = BitSet::new();
-        for comptype in component_types {
-            let id = components_manager.register_component_if_not_exists(comptype);
-            assert!(
-                bit_indexes.insert(id),
-                "Only one of each component type per entity allowed"
-            );
-        }
-        Self::new(bit_indexes)
     }
 }
 
-#[derive(Debug)]
 struct EntityInfo {
     id: EntityId,
     bitmask: EntityBitmask,
@@ -59,21 +42,16 @@ struct EntityInfo {
 }
 
 impl EntityInfo {
-    fn new<T: Bundle>(
-        id: EntityId,
-        components: T,
-        components_manager: &mut component::ComponentManger,
-    ) -> Self {
-        let entity_components = components.into();
+    fn new<T: component::Bundle>(id: EntityId, components: T) -> Self {
         Self {
             id,
-            bitmask: EntityBitmask::from_components(&entity_components, components_manager),
-            components: entity_components,
+            bitmask: EntityBitmask,
+            components: components.into(),
         }
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub(crate) struct EntityManager {
     entities: Vec<EntityInfo>,
     next_id: usize,
@@ -86,15 +64,10 @@ impl EntityManager {
         return new_entity;
     }
 
-    pub(crate) fn spawn<T: Bundle>(
-        &mut self,
-        components: T,
-        components_manager: &mut component::ComponentManger,
-    ) -> EntityId {
+    pub(crate) fn spawn<T: component::Bundle>(&mut self, components: T) {
         let new_entity_id = self.new_entity_id();
-        let new_entity = EntityInfo::new(new_entity_id, components, components_manager);
+        let new_entity = EntityInfo::new(new_entity_id, components);
         self.entities.push(new_entity);
-        new_entity_id
     }
 
     /// Not to be confused with entity_id
@@ -121,4 +94,12 @@ impl EntityManager {
                 None => panic!("Unable to find entity!"),
             });
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spawn_empty_entity() {}
 }

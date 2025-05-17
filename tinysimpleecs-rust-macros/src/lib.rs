@@ -25,7 +25,7 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
         }
     });
     let full = quote! {
-        impl<#(#values: Component),*> Bundle for (#(#values,)*) {
+        impl<#(#values: Component + 'static),*> Bundle for (#(#values,)*) {
             fn into_array(self) -> Box<[Box<dyn Component>]> {
                 Box::new([
                     #(#implementation)*
