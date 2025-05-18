@@ -19,19 +19,19 @@ impl World {
         Self::default()
     }
 
-    pub fn with_entities(components: &[TypeId]) -> Self {
+    pub fn with_components(components: &[TypeId]) -> Self {
         Self {
             components_manager: components.into(),
             ..Default::default()
         }
     }
 
-    pub fn spawn<T: component::Bundle>(&mut self, components: T) -> EntityId {
+    fn spawn<T: component::Bundle>(&mut self, components: T) -> EntityId {
         self.entity_manager
             .spawn(components, &mut self.components_manager)
     }
 
-    pub fn despawn(&mut self, entity: entity::EntityId) {
+    fn despawn(&mut self, entity: entity::EntityId) {
         self.entity_manager.despawn(entity);
     }
 }
@@ -43,7 +43,7 @@ impl Commands {
     pub fn spawn<T: component::Bundle>(tospawn: T) {}
 }
 
-macro_rules! entities {
+macro_rules! mkcomponents {
     ($($entity:ident),*) => {
         &[$(::std::any::TypeId::of::<$entity>()),*]
     };
@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn add_entities_macro() {
-        let world = World::with_entities(entities!(Banana, Banana2));
+        let world = World::with_components(mkcomponents!(Banana, Banana2));
         assert!(world
             .components_manager
             .component_exists(&TypeId::of::<Banana>()));

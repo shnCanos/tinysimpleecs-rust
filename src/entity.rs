@@ -1,6 +1,7 @@
-use std::fmt::Debug;
+use std::{any::TypeId, collections::HashMap, fmt::Debug};
 
 use bit_set::BitSet;
+use tinysimpleecs_rust_macros::create_query_type;
 
 use crate::component::{self, Bundle};
 
@@ -74,6 +75,32 @@ impl EntityInfo {
 pub(crate) struct EntityManager {
     entities: Vec<EntityInfo>,
     next_id: usize,
+}
+
+trait ComponentsQuery {
+    fn into_bitmask(&self, components_manager: &component::ComponentManger) -> EntityBitmask;
+}
+
+create_query_type!(1, 15, ComponentsQuery);
+
+struct Query<Q, R = ()>
+where
+    Q: ComponentsQuery,
+{
+    components: Q,
+    restrictions: R,
+}
+
+impl<Q, R> Query<Q, R>
+where
+    Q: ComponentsQuery,
+{
+    pub(crate) fn get_bitmask(
+        &self,
+        components_manager: &component::ComponentManger,
+    ) -> EntityBitmask {
+        self.components.into_bitmask(components_manager)
+    }
 }
 
 impl EntityManager {
