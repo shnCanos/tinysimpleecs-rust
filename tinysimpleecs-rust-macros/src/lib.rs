@@ -71,10 +71,16 @@ pub fn create_query_type(item: TokenStream) -> TokenStream {
 
         joint.push(quote! {
             impl #query_trait for (#(#queries,)*) {
-                fn into_bitmask(&self, components_manager: &component::ComponentManger) -> EntityBitmask {
+                fn into_bitmask(self, components_manager: &component::ComponentManger) -> EntityBitmask {
                     let mut bitset = BitSet::new();
 
-                    #(components_manager.get_component_id(self.#queries_n).unwrap();)*
+                    #(
+                    if let Some(id) = components_manager.get_component_id(self.#queries_n) {
+                        bitset.insert(*id);
+                    } else {
+                        // Do nothing. The components are added dynamically
+                    }
+                    )*
 
                     EntityBitmask::new(bitset)
                 }

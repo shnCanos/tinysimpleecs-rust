@@ -31,6 +31,14 @@ impl EntityBitmask {
     }
 }
 
+impl std::ops::Deref for EntityBitmask {
+    type Target = BitSet;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl EntityBitmask {
     pub(crate) fn from_components(
         components: &EntityComponents,
@@ -78,7 +86,7 @@ pub(crate) struct EntityManager {
 }
 
 trait ComponentsQuery {
-    fn into_bitmask(&self, components_manager: &component::ComponentManger) -> EntityBitmask;
+    fn into_bitmask(self, components_manager: &component::ComponentManger) -> EntityBitmask;
 }
 
 create_query_type!(1, 15, ComponentsQuery);
@@ -91,15 +99,33 @@ where
     restrictions: R,
 }
 
+struct QueryBitmask {
+    components: EntityBitmask,
+    restrictions: EntityBitmask,
+}
+
+impl QueryBitmask {
+    fn new(components: EntityBitmask, restrictions: EntityBitmask) -> Self {
+        Self {
+            components,
+            restrictions,
+        }
+    }
+}
+
 impl<Q, R> Query<Q, R>
 where
     Q: ComponentsQuery,
 {
-    pub(crate) fn get_bitmask(
-        &self,
+    pub(crate) fn into_bitmask(
+        self,
         components_manager: &component::ComponentManger,
-    ) -> EntityBitmask {
-        self.components.into_bitmask(components_manager)
+    ) -> QueryBitmask {
+        // 1. Add restrictions too
+        // 2. Make sure that there's no overlap between restrictions and queries
+        let components_bitmask = self.components.into_bitmask(components_manager);
+
+        QueryBitmask::new(components_bitmask, EntityBitmask::new(BitSet::default()))
     }
 }
 
@@ -144,5 +170,31 @@ impl EntityManager {
                 Some(index) => index,
                 None => panic!("Unable to find entity!"),
             });
+    }
+
+    pub(crate) fn query<Q: ComponentsQuery, R>(
+        &mut self,
+        query: Query<Q, R>,
+        components_manager: &component::ComponentManger,
+    ) -> Vec<&mut EntityComponents> {
+        let query_bitmask = query.into_bitmask(components_manager);
+
+        let mut matches = Vec::new();
+        for entity_info in &mut self.entities {
+            let within_query = entity_info.bitmask.is_subset(&query_bitmask.components);
+            let within_restrictions = entity_info
+                .bitmask
+                .intersection(&query_bitmask.restrictions)
+                .next()
+                .is_some();
+
+            if !within_query || within_restrictions {
+                continue;
+            }
+
+            matches.push(&mut entity_info.components);
+        }
+
+        matches
     }
 }
