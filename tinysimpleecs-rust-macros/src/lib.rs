@@ -77,9 +77,10 @@ pub fn create_query_type(item: TokenStream) -> TokenStream {
                     #(
                     if let Some(id) = components_manager.get_component_id(self.#queries_n) {
                         bitset.insert(*id);
-                    } else {
-                        // Do nothing. The components are added dynamically
-                    }
+                    } 
+                    // else {
+                    // Do nothing. The components are added dynamically
+                    // }
                     )*
 
                     EntityBitmask::new(bitset)

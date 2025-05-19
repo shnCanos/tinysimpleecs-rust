@@ -17,11 +17,26 @@ impl EntityId {
 #[derive(Default, Debug)]
 pub(crate) struct EntityComponents(Box<[Box<dyn component::Component>]>);
 
+impl std::ops::Deref for EntityComponents {
+    type Target = Box<[Box<dyn component::Component>]>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for EntityComponents {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<T: Bundle> From<T> for EntityComponents {
     fn from(value: T) -> Self {
         Self(value.into_array())
     }
 }
+
 #[derive(Debug)]
 pub(crate) struct EntityBitmask(BitSet);
 
@@ -77,6 +92,15 @@ impl EntityInfo {
             components: entity_components,
         }
     }
+
+    fn component_from_id(&mut self, component_id: usize) -> &mut Box<dyn component::Component> {
+        let index = self
+            .bitmask
+            .iter()
+            .position(|id| id == component_id)
+            .unwrap();
+        &mut self.components[index]
+    }
 }
 
 #[derive(Default, Debug)]
@@ -85,7 +109,7 @@ pub(crate) struct EntityManager {
     next_id: usize,
 }
 
-trait ComponentsQuery {
+pub trait ComponentsQuery {
     fn into_bitmask(self, components_manager: &component::ComponentManger) -> EntityBitmask;
 }
 
@@ -176,7 +200,7 @@ impl EntityManager {
         &mut self,
         query: Query<Q, R>,
         components_manager: &component::ComponentManger,
-    ) -> Vec<&mut EntityComponents> {
+    ) -> Vec<Box<[&mut Box<dyn component::Component>]>> {
         let query_bitmask = query.into_bitmask(components_manager);
 
         let mut matches = Vec::new();
@@ -192,7 +216,13 @@ impl EntityManager {
                 continue;
             }
 
-            matches.push(&mut entity_info.components);
+            let new_components_array: Box<[&mut Box<dyn component::Component>]> = query_bitmask
+                .components
+                .iter()
+                .map(|id| entity_info.component_from_id(id))
+                .collect();
+
+            matches.push(new_components_array);
         }
 
         matches
