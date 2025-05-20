@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, cell::RefCell, rc::Rc};
 
 use component::{Component, ComponentManger};
 use entity::EntityId;
@@ -26,7 +26,7 @@ impl World {
         }
     }
 
-    fn spawn<T: component::Bundle>(&mut self, components: T) -> EntityId {
+    fn spawn(&mut self, components: impl component::Bundle) -> EntityId {
         self.entity_manager
             .spawn(components, &mut self.components_manager)
     }
@@ -34,15 +34,24 @@ impl World {
     fn despawn(&mut self, entity: entity::EntityId) {
         self.entity_manager.despawn(entity);
     }
+
+    fn query(
+        &mut self,
+        query_bitmask: entity::QueryBitmask,
+    ) -> Box<[Box<[Rc<RefCell<dyn component::Component>>]>]> {
+        self.entity_manager
+            .query(query_bitmask, &self.components_manager)
+    }
 }
 
 #[derive(Default)]
 pub struct Commands {}
 
 impl Commands {
-    pub fn spawn<T: component::Bundle>(tospawn: T) {}
+    pub fn spawn(tospawn: impl component::Bundle) {}
 }
 
+#[macro_export]
 macro_rules! mkcomponents {
     ($($entity:ident),*) => {
         &[$(::std::any::TypeId::of::<$entity>()),*]
@@ -51,6 +60,12 @@ macro_rules! mkcomponents {
 
 #[cfg(test)]
 mod tests {
+    use std::any::Any;
+    use std::ops::Deref;
+    use std::ops::DerefMut;
+
+    use super::component::*;
+    use super::entity::*;
     use super::*;
 
     #[derive(Component, Debug)]
@@ -81,5 +96,61 @@ mod tests {
         assert!(world
             .components_manager
             .component_exists(&TypeId::of::<Banana2>()));
+    }
+
+    #[test]
+    fn query_entities() {
+        let mut world = World::with_components(mkcomponents!(Banana, Banana2));
+
+        const BANANA_STARTING: usize = 0;
+
+        {
+            let mut result = world.query((mkquery_bitmask!(Query<(Banana, Banana2), ()>))(
+                &world.components_manager,
+            ));
+
+            assert!(result.is_empty());
+        }
+
+        let _ = world.spawn((Banana {}, Banana2(BANANA_STARTING)));
+
+        {
+            let mut result = world.query((mkquery_bitmask!(Query<(Banana, Banana2), ()>))(
+                &world.components_manager,
+            ));
+            assert!(result.len() == 1);
+
+            for ent in result.iter_mut() {
+                assert!(ent.len() == 2);
+                let [_banana, banana2] = ent.deref_mut() else {
+                    unreachable!()
+                };
+
+                let banana2 = (banana2 as &mut dyn Any)
+                    .downcast_mut::<RefCell<Banana2>>()
+                    .unwrap();
+
+                banana2.borrow_mut().0 += 1;
+            }
+        }
+
+        {
+            let mut result = world.query((mkquery_bitmask!(Query<(Banana, Banana2), ()>))(
+                &world.components_manager,
+            ));
+            assert!(result.len() == 1);
+
+            for ent in result.iter_mut() {
+                assert!(ent.len() == 2);
+                let [_banana, banana2] = ent.deref_mut() else {
+                    unreachable!()
+                };
+
+                let banana2: &mut Banana2 =
+                    (banana2 as &mut dyn Any).downcast_mut::<Banana2>().unwrap();
+
+                assert!(banana2.0 == BANANA_STARTING + 1);
+            }
+        }
     }
 }

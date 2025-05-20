@@ -1,6 +1,8 @@
 use std::{
     any::{Any, TypeId},
+    cell::RefCell,
     collections::HashMap,
+    rc::Rc,
 };
 
 use tinysimpleecs_rust_macros::implement_bundle;
@@ -55,7 +57,7 @@ pub trait Component: Any + std::fmt::Debug {}
 ///
 /// Why, simply because it looks better
 pub trait Bundle {
-    fn into_array(self) -> Box<[Box<dyn Component>]>;
+    fn into_array(self) -> Box<[Rc<RefCell<dyn Component>>]>;
 }
 
 variadics_please::all_tuples!(implement_bundle, 1, 15, B);

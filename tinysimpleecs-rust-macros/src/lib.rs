@@ -22,13 +22,13 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
     let implementation = (0..values.len()).map(|i| {
         let idx = syn::Index::from(i);
         quote! {
-            ::std::boxed::Box::new(self.#idx),
+            ::std::rc::Rc::new(::std::cell::RefCell::new(self.#idx)),
         }
     });
     let full = quote! {
         impl<#(#values: Component + 'static),*> Bundle for (#(#values,)*) {
-            fn into_array(self) -> Box<[Box<dyn Component>]> {
-                Box::new([
+            fn into_array(self) -> ::std::boxed::Box<[::std::rc::Rc<::std::cell::RefCell<dyn Component>>]> {
+                ::std::boxed::Box::new([
                     #(#implementation)*
                 ])
             }
@@ -46,9 +46,9 @@ struct QueryTypeMaker {
 impl Parse for QueryTypeMaker {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let min = input.parse::<syn::LitInt>()?;
-        input.parse::<syn::Token![,]>();
+        input.parse::<syn::Token![,]>().unwrap();
         let max = input.parse::<syn::LitInt>()?;
-        input.parse::<syn::Token![,]>();
+        input.parse::<syn::Token![,]>().unwrap();
         let query_type = input.parse::<syn::Type>()?;
 
         Ok(Self {
