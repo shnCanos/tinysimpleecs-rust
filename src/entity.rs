@@ -67,8 +67,9 @@ impl EntityBitmask {
         let mut bit_indexes = BitSet::new();
         for comptype in component_types {
             let id = components_manager.register_component_if_not_exists(comptype);
-            assert!(
-                bit_indexes.insert(id),
+            let did_insert = bit_indexes.insert(id);
+            debug_assert!(
+                did_insert,
                 "Only one of each component type per entity allowed"
             );
         }

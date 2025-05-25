@@ -41,7 +41,7 @@ impl From<&[TypeId]> for ComponentManger {
     fn from(value: &[TypeId]) -> Self {
         let mut components_manager = Self::default();
         for comp in value {
-            assert!(!components_manager.component_exists(comp));
+            debug_assert!(!components_manager.component_exists(comp));
             components_manager.register_component_unchecked(*comp);
         }
         components_manager

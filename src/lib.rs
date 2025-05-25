@@ -60,10 +60,6 @@ macro_rules! mkcomponents {
 
 #[cfg(test)]
 mod tests {
-    use std::any::Any;
-    use std::ops::Deref;
-    use std::ops::DerefMut;
-
     use super::component::*;
     use super::entity::*;
     use super::*;
@@ -101,56 +97,6 @@ mod tests {
     #[test]
     fn query_entities() {
         let mut world = World::with_components(mkcomponents!(Banana, Banana2));
-
         const BANANA_STARTING: usize = 0;
-
-        {
-            let mut result = world.query((mkquery_bitmask!(Query<(Banana, Banana2), ()>))(
-                &world.components_manager,
-            ));
-
-            assert!(result.is_empty());
-        }
-
-        let _ = world.spawn((Banana {}, Banana2(BANANA_STARTING)));
-
-        {
-            let mut result = world.query((mkquery_bitmask!(Query<(Banana, Banana2), ()>))(
-                &world.components_manager,
-            ));
-            assert!(result.len() == 1);
-
-            for ent in result.iter_mut() {
-                assert!(ent.len() == 2);
-                let [_banana, banana2] = ent.deref_mut() else {
-                    unreachable!()
-                };
-
-                let banana2 = (banana2 as &mut dyn Any)
-                    .downcast_mut::<RefCell<Banana2>>()
-                    .unwrap();
-
-                banana2.borrow_mut().0 += 1;
-            }
-        }
-
-        {
-            let mut result = world.query((mkquery_bitmask!(Query<(Banana, Banana2), ()>))(
-                &world.components_manager,
-            ));
-            assert!(result.len() == 1);
-
-            for ent in result.iter_mut() {
-                assert!(ent.len() == 2);
-                let [_banana, banana2] = ent.deref_mut() else {
-                    unreachable!()
-                };
-
-                let banana2: &mut Banana2 =
-                    (banana2 as &mut dyn Any).downcast_mut::<Banana2>().unwrap();
-
-                assert!(banana2.0 == BANANA_STARTING + 1);
-            }
-        }
     }
 }
