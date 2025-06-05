@@ -57,7 +57,7 @@ impl std::ops::Deref for EntityBitmask {
 impl EntityBitmask {
     pub(crate) fn from_components(
         components: &EntityComponents,
-        components_manager: &mut component::ComponentManger,
+        components_manager: &mut component::ComponentManager,
     ) -> Self {
         let component_types: Vec<_> = components
             .0
@@ -88,7 +88,7 @@ impl EntityInfo {
     fn new(
         id: EntityId,
         components: impl component::Bundle,
-        components_manager: &mut component::ComponentManger,
+        components_manager: &mut component::ComponentManager,
     ) -> Self {
         let entity_components = components.into();
         Self {
@@ -115,7 +115,7 @@ pub(crate) struct EntityManager {
 }
 
 pub trait ComponentsQuery {
-    fn into_bitmask(self, components_manager: &component::ComponentManger) -> EntityBitmask;
+    fn into_bitmask(self, components_manager: &component::ComponentManager) -> EntityBitmask;
 }
 
 create_query_type!(0, 15, ComponentsQuery);
@@ -178,7 +178,7 @@ impl EntityManager {
     pub(crate) fn spawn(
         &mut self,
         components: impl component::Bundle,
-        components_manager: &mut component::ComponentManger,
+        components_manager: &mut component::ComponentManager,
     ) -> EntityId {
         let new_entity_id = self.new_entity_id();
         let new_entity = EntityInfo::new(new_entity_id, components, components_manager);
@@ -214,7 +214,7 @@ impl EntityManager {
     pub(crate) fn query(
         &self,
         query_bitmask: QueryBitmask,
-        components_manager: &component::ComponentManger,
+        components_manager: &component::ComponentManager,
     ) -> Box<[Box<[Rc<RefCell<dyn component::Component>>]>]> {
         let mut matches = Vec::new();
         for entity_info in &self.entities {

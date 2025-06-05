@@ -21,16 +21,15 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
     let values: Vec<_> = input.into_iter().collect();
     let implementation = (0..values.len()).map(|i| {
         let idx = syn::Index::from(i);
+        let value = &values[i];
         quote! {
-            ::std::rc::Rc::new(::std::cell::RefCell::new(self.#idx)),
+            manager.add_component_as::<#value>(self.#idx);
         }
     });
     let full = quote! {
         impl<#(#values: Component + 'static),*> Bundle for (#(#values,)*) {
-            fn into_array(self) -> ::std::boxed::Box<[::std::rc::Rc<::std::cell::RefCell<dyn Component>>]> {
-                ::std::boxed::Box::new([
-                    #(#implementation)*
-                ])
+            fn add(self, manager: &mut ComponentManager) {
+                #(#implementation)*
             }
         }
     };

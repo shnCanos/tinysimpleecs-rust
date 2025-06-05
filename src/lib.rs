@@ -1,6 +1,8 @@
+#![feature(alloc_layout_extra)]
+#![feature(allocator_api)]
 use std::{any::TypeId, cell::RefCell, rc::Rc};
 
-use component::{Component, ComponentManger};
+use component::{Component, ComponentManager};
 use entity::EntityId;
 use tinysimpleecs_rust_macros::Component;
 
@@ -9,7 +11,7 @@ mod entity;
 
 #[derive(Default)]
 struct World {
-    components_manager: component::ComponentManger,
+    components_manager: component::ComponentManager,
     entity_manager: entity::EntityManager,
     commands: Commands,
 }

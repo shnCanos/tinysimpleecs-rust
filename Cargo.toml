@@ -7,6 +7,7 @@ edition = "2021"
 tinysimpleecs-rust-macros = { path = "./tinysimpleecs-rust-macros" }
 log = "0.4"
 variadics_please = "1.1"
+any_vec = "0.14.0"
 
 [dependencies.bit-set]
 version = "0.8"
