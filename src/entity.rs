@@ -1,48 +1,28 @@
-use std::{any::TypeId, cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
-
 use bit_set::BitSet;
-use tinysimpleecs_rust_macros::create_query_type;
 
 use crate::component::{self, Bundle};
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) struct EntityId(usize);
+pub struct EntityId(usize);
 
 impl EntityId {
-    fn new(id: usize) -> Self {
+    pub(crate) fn new(id: usize) -> Self {
         Self(id)
     }
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct EntityComponents(Box<[Rc<RefCell<dyn component::Component>>]>);
-
-impl std::ops::Deref for EntityComponents {
-    type Target = Box<[Rc<RefCell<dyn component::Component>>]>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for EntityComponents {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<T: Bundle> From<T> for EntityComponents {
-    fn from(value: T) -> Self {
-        Self(value.into_array())
-    }
-}
-
 #[derive(Debug)]
-pub(crate) struct EntityBitmask(BitSet);
+pub(crate) struct EntityBitmask(pub(crate) BitSet);
 
 impl EntityBitmask {
     pub(crate) fn new(bitset: BitSet) -> Self {
         Self(bitset)
+    }
+}
+
+impl From<BitSet> for EntityBitmask {
+    fn from(value: BitSet) -> Self {
+        Self::new(value)
     }
 }
 
@@ -54,57 +34,33 @@ impl std::ops::Deref for EntityBitmask {
     }
 }
 
-impl EntityBitmask {
-    pub(crate) fn from_components(
-        components: &EntityComponents,
-        components_manager: &mut component::ComponentManager,
-    ) -> Self {
-        let component_types: Vec<_> = components
-            .0
-            .iter()
-            .map(|comp| (**comp).borrow().type_id())
-            .collect();
-        let mut bit_indexes = BitSet::new();
-        for comptype in component_types {
-            let id = components_manager.register_component_if_not_exists(comptype);
-            let did_insert = bit_indexes.insert(id);
-            debug_assert!(
-                did_insert,
-                "Only one of each component type per entity allowed"
-            );
-        }
-        Self::new(bit_indexes)
-    }
-}
-
 #[derive(Debug)]
-struct EntityInfo {
-    id: EntityId,
-    bitmask: EntityBitmask,
-    components: EntityComponents,
+pub(crate) struct EntityInfo {
+    pub(crate) id: EntityId,
+    pub(crate) bitmask: EntityBitmask,
+    pub(crate) component_indexes: Box<[usize]>,
 }
 
 impl EntityInfo {
-    fn new(
+    pub(crate) fn new(
+        id: EntityId,
+        bitmask: EntityBitmask,
+        component_indexes: Box<[usize]>,
+    ) -> Self {
+        Self {
+            id,
+            bitmask,
+            component_indexes,
+        }
+    }
+
+    pub(crate) fn from_bundle(
         id: EntityId,
         components: impl component::Bundle,
         components_manager: &mut component::ComponentManager,
     ) -> Self {
-        let entity_components = components.into();
-        Self {
-            id,
-            bitmask: EntityBitmask::from_components(&entity_components, components_manager),
-            components: entity_components,
-        }
-    }
-
-    fn component_from_id(&self, component_id: usize) -> Rc<RefCell<dyn component::Component>> {
-        let index = self
-            .bitmask
-            .iter()
-            .position(|id| id == component_id)
-            .unwrap();
-        self.components[index].clone()
+        let (bitmask, component_indexes) = components.add(id, components_manager);
+        Self::new(id, bitmask, component_indexes)
     }
 }
 
@@ -117,56 +73,6 @@ pub(crate) struct EntityManager {
 pub trait ComponentsQuery {
     fn into_bitmask(self, components_manager: &component::ComponentManager) -> EntityBitmask;
 }
-
-create_query_type!(0, 15, ComponentsQuery);
-
-#[macro_export]
-macro_rules! mkquery_bitmask {
-    (Query<($($component:ident),+), ($($restriction:ident),*)>) => {
-        |components_manager: &$crate::component::ComponentManger| $crate::entity::QueryBitmask::new(
-            ($(TypeId::of::<$component>()),*).into_bitmask(components_manager),
-            ($(TypeId::of::<$restriction>()),*).into_bitmask(components_manager),
-        )
-    };
-}
-
-// pub struct Query<Q, R = ()>
-// where
-//     Q: ComponentsQuery,
-// {
-//     components: Q,
-//     restrictions: R,
-// }
-
-pub(crate) struct QueryBitmask {
-    components: EntityBitmask,
-    restrictions: EntityBitmask,
-}
-
-impl QueryBitmask {
-    pub fn new(components: EntityBitmask, restrictions: EntityBitmask) -> Self {
-        Self {
-            components,
-            restrictions,
-        }
-    }
-}
-
-// impl<Q, R> Query<Q, R>
-// where
-//     Q: ComponentsQuery,
-// {
-//     pub(crate) fn into_bitmask(
-//         self,
-//         components_manager: &component::ComponentManger,
-//     ) -> QueryBitmask {
-//         // 1. Add restrictions too
-//         // 2. Make sure that there's no overlap between restrictions and queries
-//         let components_bitmask = self.components.into_bitmask(components_manager);
-//
-//         QueryBitmask::new(components_bitmask, EntityBitmask::new(BitSet::default()))
-//     }
-// }
 
 impl EntityManager {
     fn new_entity_id(&mut self) -> EntityId {
@@ -181,7 +87,7 @@ impl EntityManager {
         components_manager: &mut component::ComponentManager,
     ) -> EntityId {
         let new_entity_id = self.new_entity_id();
-        let new_entity = EntityInfo::new(new_entity_id, components, components_manager);
+        let new_entity = EntityInfo::from_bundle(new_entity_id, components, components_manager);
         self.entities.push(new_entity);
         new_entity_id
     }
@@ -209,35 +115,5 @@ impl EntityManager {
                 Some(index) => index,
                 None => panic!("Unable to find entity!"),
             });
-    }
-
-    pub(crate) fn query(
-        &self,
-        query_bitmask: QueryBitmask,
-        components_manager: &component::ComponentManager,
-    ) -> Box<[Box<[Rc<RefCell<dyn component::Component>>]>]> {
-        let mut matches = Vec::new();
-        for entity_info in &self.entities {
-            let within_query = entity_info.bitmask.is_subset(&query_bitmask.components);
-            let within_restrictions = entity_info
-                .bitmask
-                .intersection(&query_bitmask.restrictions)
-                .next()
-                .is_some();
-
-            if !within_query || within_restrictions {
-                continue;
-            }
-
-            let new_components_array: Box<[Rc<RefCell<dyn component::Component>>]> = query_bitmask
-                .components
-                .iter()
-                .map(|id| entity_info.component_from_id(id))
-                .collect();
-
-            matches.push(new_components_array);
-        }
-
-        matches.into_boxed_slice()
     }
 }

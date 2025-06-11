@@ -1,16 +1,13 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
-use std::{any::TypeId, cell::RefCell, rc::Rc};
 
-use component::{Component, ComponentManager};
 use entity::EntityId;
-use tinysimpleecs_rust_macros::Component;
 
 mod component;
 mod entity;
 
 #[derive(Default)]
-struct World {
+pub struct World {
     components_manager: component::ComponentManager,
     entity_manager: entity::EntityManager,
     commands: Commands,
@@ -21,13 +18,6 @@ impl World {
         Self::default()
     }
 
-    pub fn with_components(components: &[TypeId]) -> Self {
-        Self {
-            components_manager: components.into(),
-            ..Default::default()
-        }
-    }
-
     fn spawn(&mut self, components: impl component::Bundle) -> EntityId {
         self.entity_manager
             .spawn(components, &mut self.components_manager)
@@ -36,35 +26,29 @@ impl World {
     fn despawn(&mut self, entity: entity::EntityId) {
         self.entity_manager.despawn(entity);
     }
-
-    fn query(
-        &mut self,
-        query_bitmask: entity::QueryBitmask,
-    ) -> Box<[Box<[Rc<RefCell<dyn component::Component>>]>]> {
-        self.entity_manager
-            .query(query_bitmask, &self.components_manager)
-    }
 }
+
+type CommandAction = Vec<Box<dyn FnOnce(&mut World)>>;
 
 #[derive(Default)]
-pub struct Commands {}
-
-impl Commands {
-    pub fn spawn(tospawn: impl component::Bundle) {}
+pub struct Commands {
+    actions_queue: CommandAction,
 }
 
-#[macro_export]
-macro_rules! mkcomponents {
-    ($($entity:ident),*) => {
-        &[$(::std::any::TypeId::of::<$entity>()),*]
-    };
+impl Commands {
+    pub fn spawn(&mut self, tospawn: impl component::Bundle + 'static) {
+        self.actions_queue.push(Box::new(move |world: &mut World| {
+            world.spawn(tospawn);
+        }));
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::component::*;
-    use super::entity::*;
     use super::*;
+    use bit_set::BitSet;
+    use tinysimpleecs_rust_macros::Component;
 
     #[derive(Component, Debug)]
     pub struct Banana;
@@ -77,28 +61,37 @@ mod tests {
         let mut world = World::new();
         let id = world.spawn((Banana {}, Banana2(23)));
         assert!(world.entity_manager.entity_exists(id));
-        assert!(world
-            .components_manager
-            .component_exists(&TypeId::of::<Banana>()));
-        assert!(world
-            .components_manager
-            .component_exists(&TypeId::of::<Banana2>()));
+        assert!(world.components_manager.component_exists::<Banana>());
+        assert!(world.components_manager.component_exists::<Banana2>());
     }
 
     #[test]
-    fn add_entities_macro() {
-        let world = World::with_components(mkcomponents!(Banana, Banana2));
-        assert!(world
-            .components_manager
-            .component_exists(&TypeId::of::<Banana>()));
-        assert!(world
-            .components_manager
-            .component_exists(&TypeId::of::<Banana2>()));
+    fn entityinfo() {
+        let mut world = World::new();
+        let id1 = world.spawn(((Banana {}),));
+        let id2 = world.spawn((Banana {}, Banana2(23)));
+        let id3 = world.spawn(((Banana2(23)),));
+
+        let info1 = world.entity_manager.get_entity_info(id1).unwrap();
+        let info2 = world.entity_manager.get_entity_info(id2).unwrap();
+        let info3 = world.entity_manager.get_entity_info(id3).unwrap();
+
+        assert_eq!(*info1.component_indexes, [0]);
+        assert_eq!(*info2.component_indexes, [1, 0]);
+        assert_eq!(*info3.component_indexes, [1]);
+
+        assert_eq!(info1.id, EntityId::new(0));
+        assert_eq!(info2.id, EntityId::new(1));
+        assert_eq!(info3.id, EntityId::new(2));
+
+        assert_eq!(info1.bitmask.0, BitSet::from_iter([0]));
+        assert_eq!(info2.bitmask.0, BitSet::from_iter([0, 1]));
+        assert_eq!(info3.bitmask.0, BitSet::from_iter([1]));
     }
 
     #[test]
     fn query_entities() {
-        let mut world = World::with_components(mkcomponents!(Banana, Banana2));
+        let mut world = World::new();
         const BANANA_STARTING: usize = 0;
     }
 }

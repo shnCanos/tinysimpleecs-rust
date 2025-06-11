@@ -18,78 +18,33 @@ pub fn derive_into_hash_map(item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn implement_bundle(item: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
+    let len = input.len();
     let values: Vec<_> = input.into_iter().collect();
-    let implementation = (0..values.len()).map(|i| {
+    let implementation = (0..len).map(|i| {
         let idx = syn::Index::from(i);
         let value = &values[i];
         quote! {
-            manager.add_component_as::<#value>(self.#idx);
+            let (id, component_index) = manager.add_component::<#value>(entity, self.#idx);
+
+            component_indexes[current_index].write(component_index);
+            current_index += 1;
+
+            let had_inserted = bitset.insert(id);
+            debug_assert!(had_inserted, "Only one of each component type per entity allowed");
         }
     });
     let full = quote! {
-        impl<#(#values: Component + 'static),*> Bundle for (#(#values,)*) {
-            fn add(self, manager: &mut ComponentManager) {
+        impl<#(#values: Component),*> Bundle for (#(#values,)*) {
+            fn add(self, entity: EntityId, manager: &mut ComponentManager) -> (EntityBitmask, Box<[usize]>) {
+                let mut bitset = ::bit_set::BitSet::new();
+
+                let mut component_indexes = ::std::boxed::Box::<[usize]>::new_uninit_slice(#len);
+                let mut current_index = 0;
+
                 #(#implementation)*
+                (bitset.into(), unsafe {component_indexes.assume_init()})
             }
         }
     };
     full.into()
-}
-
-struct QueryTypeMaker {
-    min: usize,
-    max: usize,
-    query_trait: syn::Type,
-}
-
-impl Parse for QueryTypeMaker {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let min = input.parse::<syn::LitInt>()?;
-        input.parse::<syn::Token![,]>().unwrap();
-        let max = input.parse::<syn::LitInt>()?;
-        input.parse::<syn::Token![,]>().unwrap();
-        let query_type = input.parse::<syn::Type>()?;
-
-        Ok(Self {
-            min: min.base10_parse().unwrap(),
-            max: max.base10_parse().unwrap(),
-            query_trait: query_type,
-        })
-    }
-}
-
-#[proc_macro]
-pub fn create_query_type(item: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(item as QueryTypeMaker);
-    let query_trait = input.query_trait;
-
-    let mut joint = Vec::with_capacity(input.max - input.min);
-    for current in input.min..=input.max {
-        let queries: Vec<_> = (0..current).map(|_| quote! {TypeId}).collect();
-        let queries_n: Vec<_> = (0..current).map(syn::Index::from).collect();
-
-        joint.push(quote! {
-            impl #query_trait for (#(#queries,)*) {
-                fn into_bitmask(self, components_manager: &component::ComponentManger) -> EntityBitmask {
-                    let mut bitset = BitSet::new();
-
-                    #(
-                    if let Some(id) = components_manager.get_component_id(self.#queries_n) {
-                        bitset.insert(*id);
-                    } 
-                    // else {
-                    // Do nothing. The components are added dynamically
-                    // }
-                    )*
-
-                    EntityBitmask::new(bitset)
-                }
-            }
-        });
-    }
-
-    quote! {
-        #(#joint)*
-    }
-    .into()
 }
