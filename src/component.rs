@@ -105,7 +105,7 @@ impl ComponentManager {
 
 pub trait Component: std::fmt::Debug + 'static {}
 
-pub(crate) trait Bundle {
+pub trait Bundle {
     fn add(self, entity: EntityId, manager: &mut ComponentManager)
         -> (EntityBitmask, Box<[usize]>);
 }
