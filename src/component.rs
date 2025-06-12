@@ -94,9 +94,19 @@ impl ComponentManager {
     ) -> (ComponentId, ComponentIndex) {
         let id = self.register_component_if_not_exists::<C>();
         let collumn = self.components.get_mut(&TypeId::of::<C>()).unwrap();
-        collumn.push(AnyValueWrapper::new(ComponentWrapper::new(
-            entity, component,
-        )));
+
+        if cfg!(debug_assertions) {
+            collumn.push(AnyValueWrapper::new(ComponentWrapper::new(
+                entity, component,
+            )));
+        } else {
+            unsafe {
+                collumn.push_unchecked(AnyValueWrapper::new(ComponentWrapper::new(
+                    entity, component,
+                )));
+            }
+        }
+
         (id, collumn.len() - 1)
     }
 
