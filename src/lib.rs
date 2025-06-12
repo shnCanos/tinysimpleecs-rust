@@ -67,7 +67,7 @@ mod tests {
     fn manual_spawn_entity() {
         let mut world = World::new();
         let id = world.spawn((Banana {}, Banana2(23)));
-        assert!(world.entity_manager.entity_exists(id));
+        assert!(world.entity_manager.entity_exists(&id));
         assert!(world.components_manager.component_exists::<Banana>());
         assert!(world.components_manager.component_exists::<Banana2>());
     }
@@ -79,9 +79,9 @@ mod tests {
         let id2 = world.spawn((Banana {}, Banana2(23)));
         let id3 = world.spawn(((Banana2(23)),));
 
-        let info1 = world.entity_manager.get_entity_info(id1).unwrap();
-        let info2 = world.entity_manager.get_entity_info(id2).unwrap();
-        let info3 = world.entity_manager.get_entity_info(id3).unwrap();
+        let info1 = world.entity_manager.get_entity_info(&id1).unwrap();
+        let info2 = world.entity_manager.get_entity_info(&id2).unwrap();
+        let info3 = world.entity_manager.get_entity_info(&id3).unwrap();
 
         assert_eq!(*info1.component_indexes, [0]);
         assert_eq!(*info2.component_indexes, [1, 0]);

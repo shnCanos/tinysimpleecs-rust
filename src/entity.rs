@@ -1,6 +1,7 @@
 use bit_set::BitSet;
 
 use crate::component;
+use crate::query::QueryBitmask;
 use crate::Bundle;
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
@@ -62,6 +63,31 @@ impl EntityInfo {
     ) -> Self {
         components.add(id, components_manager)
     }
+
+    pub(crate) fn is_valid_query(
+        &self,
+        query_bitmask: &EntityBitmask,
+        restrictions_bitmask: &EntityBitmask,
+    ) -> bool {
+        self.bitmask.is_superset(&query_bitmask) && self.bitmask.is_disjoint(&restrictions_bitmask)
+    }
+
+    pub(crate) fn component_indexes_from_bitmask(
+        &self,
+        query_bitmask: &EntityBitmask,
+    ) -> Box<[usize]> {
+        self.component_indexes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, index)| {
+                if query_bitmask.contains(i) {
+                    Some(*index)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 #[derive(Default, Debug)]
@@ -89,27 +115,44 @@ impl EntityManager {
     }
 
     /// Not to be confused with entity_id
-    pub(crate) fn get_entity_index(&self, entity_id: EntityId) -> Option<usize> {
+    pub(crate) fn get_entity_index(&self, entity_id: &EntityId) -> Option<usize> {
         self.entities
             .iter()
-            .position(|entity_info| entity_info.id == entity_id)
+            .position(|entity_info| entity_info.id == *entity_id)
     }
 
-    pub(crate) fn get_entity_info(&self, entity_id: EntityId) -> Option<&EntityInfo> {
+    pub(crate) fn get_entity_info(&self, entity_id: &EntityId) -> Option<&EntityInfo> {
         self.entities
             .iter()
-            .find(|entity_info| entity_info.id == entity_id)
+            .find(|entity_info| entity_info.id == *entity_id)
     }
 
-    pub(crate) fn entity_exists(&self, entity_id: EntityId) -> bool {
+    pub(crate) fn entity_exists(&self, entity_id: &EntityId) -> bool {
         self.get_entity_index(entity_id).is_some()
     }
 
-    pub(crate) fn despawn(&mut self, entity_id: EntityId) {
+    pub(crate) fn despawn(&mut self, entity_id: &EntityId) {
         self.entities
             .swap_remove(match self.get_entity_index(entity_id) {
                 Some(index) => index,
                 None => panic!("Unable to find entity!"),
             });
+    }
+
+    pub(crate) fn query(
+        &self,
+        query_bitmask: &EntityBitmask,
+        restrictions_bitmask: &EntityBitmask,
+    ) -> Box<Box<[usize]>> {
+        self.entities
+            .iter()
+            .filter_map(|entity_info| {
+                if entity_info.is_valid_query(query_bitmask, restrictions_bitmask) {
+                    Some(entity_info.component_indexes_from_bitmask(query_bitmask))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
