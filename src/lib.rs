@@ -1,10 +1,12 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 
-use entity::EntityId;
+use component::ComponentManager;
+use entity::{EntityBitmask, EntityId, EntityInfo};
 
 mod component;
 mod entity;
+mod query;
 
 #[derive(Default)]
 pub struct World {
@@ -18,12 +20,12 @@ impl World {
         Self::default()
     }
 
-    fn spawn(&mut self, components: impl component::Bundle) -> EntityId {
+    pub(crate) fn spawn(&mut self, components: impl Bundle) -> EntityId {
         self.entity_manager
             .spawn(components, &mut self.components_manager)
     }
 
-    fn despawn(&mut self, entity: entity::EntityId) {
+    pub(crate) fn despawn(&mut self, entity: entity::EntityId) {
         self.entity_manager.despawn(entity);
     }
 }
@@ -36,11 +38,16 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub fn spawn(&mut self, tospawn: impl component::Bundle + 'static) {
+    pub fn spawn(&mut self, tospawn: impl Bundle + 'static) {
         self.actions_queue.push(Box::new(move |world: &mut World| {
             world.spawn(tospawn);
         }));
     }
+}
+
+pub trait Bundle {
+    fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
+    fn into_bitmask(component_manager: &mut ComponentManager) -> EntityBitmask;
 }
 
 #[cfg(test)]

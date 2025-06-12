@@ -1,5 +1,5 @@
 use std::{
-    any::{Any, TypeId},
+    any::{type_name, Any, TypeId},
     collections::HashMap,
     ops::{Deref, DerefMut},
 };
@@ -51,7 +51,7 @@ impl DerefMut for ComponentCollumn {
 }
 
 #[derive(Default)]
-pub(crate) struct ComponentManager {
+pub struct ComponentManager {
     components: HashMap<TypeId, ComponentCollumn>,
     last_used_id: ComponentId,
 }
@@ -61,10 +61,14 @@ impl ComponentManager {
         Self::default()
     }
 
-    pub(crate) fn register_component_unchecked<C: Component>(&mut self) -> ComponentId {
+    fn get_new_id(&mut self) -> usize {
         let id = self.last_used_id;
         self.last_used_id += 1;
+        id
+    }
 
+    pub(crate) fn register_component_unchecked<C: Component>(&mut self) -> ComponentId {
+        let id = self.get_new_id();
         let result = self
             .components
             .insert(TypeId::of::<C>(), ComponentCollumn::new::<C>(id));
@@ -72,11 +76,15 @@ impl ComponentManager {
         id
     }
 
+    pub(crate) fn get_component_id<C: Component>(&self) -> Option<ComponentId> {
+        self.components
+            .get(&TypeId::of::<C>())
+            .map(|collumn| collumn.id)
+    }
+
     pub(crate) fn register_component_if_not_exists<C: Component>(&mut self) -> ComponentId {
-        if let Some(collumn) = self.components.get(&TypeId::of::<C>()) {
-            return collumn.id;
-        }
-        self.register_component_unchecked::<C>()
+        self.get_component_id::<C>()
+            .unwrap_or_else(|| self.register_component_unchecked::<C>())
     }
 
     pub(crate) fn add_component<C: Component>(
@@ -91,6 +99,7 @@ impl ComponentManager {
         )));
         (id, collumn.len() - 1)
     }
+
     #[cfg(test)]
     pub(crate) fn component_exists<C: Component>(&self) -> bool {
         self.components.contains_key(&TypeId::of::<C>())
@@ -104,10 +113,5 @@ impl ComponentManager {
 }
 
 pub trait Component: std::fmt::Debug + 'static {}
-
-pub trait Bundle {
-    fn add(self, entity: EntityId, manager: &mut ComponentManager)
-        -> (EntityBitmask, Box<[usize]>);
-}
 
 variadics_please::all_tuples!(implement_bundle, 1, 15, B);

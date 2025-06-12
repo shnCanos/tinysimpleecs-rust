@@ -1,6 +1,7 @@
 use bit_set::BitSet;
 
-use crate::component::{self, Bundle};
+use crate::component;
+use crate::Bundle;
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EntityId(usize);
@@ -12,7 +13,7 @@ impl EntityId {
 }
 
 #[derive(Debug)]
-pub(crate) struct EntityBitmask(pub(crate) BitSet);
+pub struct EntityBitmask(pub(crate) BitSet);
 
 impl EntityBitmask {
     pub(crate) fn new(bitset: BitSet) -> Self {
@@ -35,7 +36,7 @@ impl std::ops::Deref for EntityBitmask {
 }
 
 #[derive(Debug)]
-pub(crate) struct EntityInfo {
+pub struct EntityInfo {
     pub(crate) id: EntityId,
     pub(crate) bitmask: EntityBitmask,
     pub(crate) component_indexes: Box<[usize]>,
@@ -56,11 +57,10 @@ impl EntityInfo {
 
     pub(crate) fn from_bundle(
         id: EntityId,
-        components: impl component::Bundle,
+        components: impl Bundle,
         components_manager: &mut component::ComponentManager,
     ) -> Self {
-        let (bitmask, component_indexes) = components.add(id, components_manager);
-        Self::new(id, bitmask, component_indexes)
+        components.add(id, components_manager)
     }
 }
 
@@ -68,10 +68,6 @@ impl EntityInfo {
 pub(crate) struct EntityManager {
     entities: Vec<EntityInfo>,
     next_id: usize,
-}
-
-pub trait ComponentsQuery {
-    fn into_bitmask(self, components_manager: &component::ComponentManager) -> EntityBitmask;
 }
 
 impl EntityManager {
@@ -83,7 +79,7 @@ impl EntityManager {
 
     pub(crate) fn spawn(
         &mut self,
-        components: impl component::Bundle,
+        components: impl Bundle,
         components_manager: &mut component::ComponentManager,
     ) -> EntityId {
         let new_entity_id = self.new_entity_id();
