@@ -91,9 +91,9 @@ mod tests {
         assert_eq!(info2.id, EntityId::new(1));
         assert_eq!(info3.id, EntityId::new(2));
 
-        assert_eq!(info1.bitmask.0, BitSet::from_iter([0]));
-        assert_eq!(info2.bitmask.0, BitSet::from_iter([0, 1]));
-        assert_eq!(info3.bitmask.0, BitSet::from_iter([1]));
+        assert_eq!(info1.bitmask.0, BitSet::from_bytes(&[0b10000000]));
+        assert_eq!(info2.bitmask.0, BitSet::from_bytes(&[0b11000000]));
+        assert_eq!(info3.bitmask.0, BitSet::from_bytes(&[0b01000000]));
     }
 
     #[test]
