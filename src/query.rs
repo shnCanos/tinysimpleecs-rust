@@ -38,15 +38,32 @@ impl<Values: Bundle, Restrictions: Bundle> QueryBitmask<Values, Restrictions> {
 }
 
 pub struct Query<Values: Bundle, Restrictions: Bundle> {
-    result: Values,
+    result: Box<[Values]>,
     _values: PhantomData<Values>,
     _restrictions: PhantomData<Restrictions>,
 }
 
 impl<Values: Bundle, Restrictions: Bundle> Query<Values, Restrictions> {
+    fn new(result: Box<[Values]>) -> Self {
+        Self {
+            result,
+            _values: PhantomData,
+            _restrictions: PhantomData,
+        }
+    }
+
     pub fn apply(entity_manager: &EntityManager, component_manager: &mut ComponentManager) -> Self {
-        let bitmask = QueryBitmask::new::<Values, Restrictions>(component_manager);
+        let bitmask: QueryBitmask<Values, Restrictions> =
+            QueryBitmask::new::<Values, Restrictions>(component_manager);
         // NOTE: The results are ordered by component_id
-        let results = entity_manager.query(&bitmask.query_bitmask, &bitmask.restrictions_bitmaks);
+        let indexes_slice =
+            entity_manager.query(&bitmask.query_bitmask, &bitmask.restrictions_bitmaks);
+
+        let result = indexes_slice
+            .into_iter()
+            .map(|indexes| Values::from_indexes(&bitmask.query_bitmask, indexes, component_manager))
+            .collect();
+
+        Self::new(result)
     }
 }

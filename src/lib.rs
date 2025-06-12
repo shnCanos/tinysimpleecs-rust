@@ -25,7 +25,7 @@ impl World {
             .spawn(components, &mut self.components_manager)
     }
 
-    pub(crate) fn despawn(&mut self, entity: entity::EntityId) {
+    pub(crate) fn despawn(&mut self, entity: &entity::EntityId) {
         self.entity_manager.despawn(entity);
     }
 }
@@ -48,6 +48,11 @@ impl Commands {
 pub trait Bundle {
     fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
     fn into_bitmask(component_manager: &mut ComponentManager) -> EntityBitmask;
+    fn from_indexes(
+        bitmask: &EntityBitmask,
+        indexes: &Box<[usize]>,
+        component_manager: &mut ComponentManager,
+    ) -> Self;
 }
 
 #[cfg(test)]

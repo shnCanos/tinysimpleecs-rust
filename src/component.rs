@@ -124,4 +124,4 @@ impl ComponentManager {
 
 pub trait Component: std::fmt::Debug + 'static {}
 
-variadics_please::all_tuples!(implement_bundle, 1, 15, B);
+variadics_please::all_tuples!(implement_bundle, 0, 15, B);

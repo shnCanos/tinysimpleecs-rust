@@ -79,9 +79,9 @@ impl EntityInfo {
         self.component_indexes
             .iter()
             .enumerate()
-            .filter_map(|(i, index)| {
+            .filter_map(|(i, &index)| {
                 if query_bitmask.contains(i) {
-                    Some(*index)
+                    Some(index)
                 } else {
                     None
                 }
@@ -143,7 +143,7 @@ impl EntityManager {
         &self,
         query_bitmask: &EntityBitmask,
         restrictions_bitmask: &EntityBitmask,
-    ) -> Box<Box<[usize]>> {
+    ) -> Box<[Box<[usize]>]> {
         self.entities
             .iter()
             .filter_map(|entity_info| {
