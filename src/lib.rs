@@ -1,6 +1,8 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 
+use std::collections::HashMap;
+
 use component::ComponentManager;
 use entity::{EntityBitmask, EntityId, EntityInfo};
 use tinysimpleecs_rust_macros::implement_bundle;
@@ -46,12 +48,14 @@ impl Commands {
     }
 }
 
+type ComponentOrder = HashMap<usize, usize>;
 pub trait Bundle {
     fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
-    fn into_bitmask(component_manager: &mut ComponentManager) -> EntityBitmask;
+    fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder);
     fn from_indexes(
         bitmask: &EntityBitmask,
-        indexes: &Box<[usize]>,
+        order: &ComponentOrder,
+        indexes: &[usize],
         component_manager: &mut ComponentManager,
     ) -> Self;
 }

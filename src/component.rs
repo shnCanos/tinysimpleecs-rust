@@ -113,6 +113,15 @@ impl ComponentManager {
     pub(crate) fn component_exists<C: Component>(&self) -> bool {
         self.components.contains_key(&TypeId::of::<C>())
     }
+
+    pub(crate) fn get_from_index<C: Component>(&self, index: usize) -> Option<&C> {
+        if let Some(collumn) = self.components.get(&TypeId::of::<C>()) {
+            return collumn
+                .get(index)
+                .map(|element_ref| element_ref.downcast_ref().unwrap());
+        }
+        None
+    }
     // #[cfg(test)]
     // pub(crate) fn get_component_id<C: Component>(&self, _component: C) -> Option<ComponentId> {
     //     self.components

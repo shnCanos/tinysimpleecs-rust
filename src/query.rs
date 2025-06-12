@@ -3,28 +3,33 @@ use std::marker::PhantomData;
 use crate::{
     component::ComponentManager,
     entity::{EntityBitmask, EntityManager},
-    Bundle,
+    Bundle, ComponentOrder,
 };
 
-pub struct QueryBitmask<Values: Bundle, Restrictions: Bundle> {
+pub struct QueryInfo<Values: Bundle, Restrictions: Bundle> {
     query_bitmask: EntityBitmask,
-    restrictions_bitmaks: EntityBitmask,
+    restrictions_bitmask: EntityBitmask,
+    query_order: ComponentOrder,
     _values: PhantomData<Values>,
     _restrictions: PhantomData<Restrictions>,
 }
 
-impl<Values: Bundle, Restrictions: Bundle> QueryBitmask<Values, Restrictions> {
+impl<Values: Bundle, Restrictions: Bundle> QueryInfo<Values, Restrictions> {
     pub fn new<V: Bundle, R: Bundle>(component_manager: &mut ComponentManager) -> Self {
+        let (query_bitmask, query_order) = V::into_bitmask(component_manager);
+        let (restrictions_bitmask, _) = R::into_bitmask(component_manager);
+
         let query_bitmask = Self {
-            query_bitmask: V::into_bitmask(component_manager),
-            restrictions_bitmaks: R::into_bitmask(component_manager),
+            query_bitmask,
+            restrictions_bitmask,
+            query_order,
             _values: PhantomData,
             _restrictions: PhantomData,
         };
 
         debug_assert!(query_bitmask
             .query_bitmask
-            .is_disjoint(&query_bitmask.restrictions_bitmaks));
+            .is_disjoint(&query_bitmask.restrictions_bitmask));
 
         query_bitmask
     }
@@ -53,15 +58,21 @@ impl<Values: Bundle, Restrictions: Bundle> Query<Values, Restrictions> {
     }
 
     pub fn apply(entity_manager: &EntityManager, component_manager: &mut ComponentManager) -> Self {
-        let bitmask: QueryBitmask<Values, Restrictions> =
-            QueryBitmask::new::<Values, Restrictions>(component_manager);
+        let info: QueryInfo<Values, Restrictions> =
+            QueryInfo::new::<Values, Restrictions>(component_manager);
         // NOTE: The results are ordered by component_id
-        let indexes_slice =
-            entity_manager.query(&bitmask.query_bitmask, &bitmask.restrictions_bitmaks);
+        let indexes_slice = entity_manager.query(&info.query_bitmask, &info.restrictions_bitmask);
 
         let result = indexes_slice
             .into_iter()
-            .map(|indexes| Values::from_indexes(&bitmask.query_bitmask, indexes, component_manager))
+            .map(|indexes| {
+                Values::from_indexes(
+                    &info.query_bitmask,
+                    &info.query_order,
+                    indexes,
+                    component_manager,
+                )
+            })
             .collect();
 
         Self::new(result)

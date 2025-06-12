@@ -1,7 +1,7 @@
 use bit_set::BitSet;
 
 use crate::component;
-use crate::query::QueryBitmask;
+use crate::query::QueryInfo;
 use crate::Bundle;
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]

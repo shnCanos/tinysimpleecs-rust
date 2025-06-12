@@ -20,9 +20,8 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
     let len = input.len();
     let values: Vec<_> = input.into_iter().collect();
-    let add_implementations = (0..len).map(|i| {
+    let add_implementations = values.iter().enumerate().map(|(i, value)| {
         let idx = syn::Index::from(i);
-        let value = &values[i];
         quote! {
             let (id, component_index) = manager.add_component::<#value>(entity, self.#idx);
 
@@ -39,32 +38,57 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
             if let Some(id) = component_manager.get_component_id::<#type_name>() {
                 let had_inserted = bitset.insert(id);
                 debug_assert!(had_inserted, "Only one of each component type per entity allowed");
+
+                order.insert(id, current_index);
+                current_index += 1;
             }
             // else { do nothing, components are added dynamically }
         }
     });
 
-    let full = quote! {
-        impl<#(#values: Component),*> crate::Bundle for (#(#values,)*) {
+    let from_indexes_implementations = values.iter().enumerate().map(|(i, value)| {
+        let idx = syn::Index::from(i);
+        quote! {
+            newtuple.#idx = component_manager.get_from_index::<#value>(order[&#i]).unwrap();
+        }
+    });
+
+    quote! {
+        impl<#(#values: crate::component::Component),*> crate::Bundle for (#(#values,)*) {
             fn add(self, entity: crate::entity::EntityId, manager: &mut ComponentManager) -> crate::entity::EntityInfo {
                 let mut bitset = ::bit_set::BitSet::new();
 
                 let mut component_indexes = ::std::boxed::Box::<[usize]>::new_uninit_slice(#len);
-                let mut current_index = 0;
+                let mut current_index = 1;
 
                 #(#add_implementations)*
 
                 crate::entity::EntityInfo::new(entity, bitset.into(), unsafe {component_indexes.assume_init()})
             }
 
-            fn into_bitmask(component_manager: &mut ComponentManager) -> EntityBitmask {
+            fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder) {
                 let mut bitset = ::bit_set::BitSet::new();
+                let mut order = ::std::collections::HashMap::new();
+                let mut current_index = 0;
 
                 #(#into_bitmask_implementations)*
 
-                bitset.into()
+                (bitset.into(), order)
+            }
+
+            fn from_indexes(
+                bitmask: &EntityBitmask,
+                order: &ComponentOrder,
+                indexes: &[usize],
+                component_manager: &mut ComponentManager,
+            ) -> Self {
+                // SAFETY: All indexes are written
+                let mut newtuple: Self = unsafe { ::std::mem::MaybeUninit::uninit().assume_init() };
+
+                #(#from_indexes_implementations)*
+
+                newtuple
             }
         }
-    };
-    full.into()
+    }.into()
 }
