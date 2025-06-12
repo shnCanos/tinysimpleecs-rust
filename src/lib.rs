@@ -3,6 +3,7 @@
 
 use component::ComponentManager;
 use entity::{EntityBitmask, EntityId, EntityInfo};
+use tinysimpleecs_rust_macros::implement_bundle;
 
 mod component;
 mod entity;
@@ -54,6 +55,8 @@ pub trait Bundle {
         component_manager: &mut ComponentManager,
     ) -> Self;
 }
+
+variadics_please::all_tuples!(implement_bundle, 0, 15, B);
 
 #[cfg(test)]
 mod tests {

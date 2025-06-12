@@ -1,11 +1,10 @@
 use std::{
-    any::{type_name, Any, TypeId},
+    any::TypeId,
     collections::HashMap,
     ops::{Deref, DerefMut},
 };
 
 use any_vec::{any_value::AnyValueWrapper, AnyVec};
-use tinysimpleecs_rust_macros::implement_bundle;
 
 use crate::{entity::EntityBitmask, EntityId};
 
@@ -123,5 +122,3 @@ impl ComponentManager {
 }
 
 pub trait Component: std::fmt::Debug + 'static {}
-
-variadics_please::all_tuples!(implement_bundle, 0, 15, B);
