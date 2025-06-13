@@ -1,8 +1,8 @@
 use bit_set::BitSet;
 
-use crate::component;
 use crate::query::QueryInfo;
 use crate::ComponentBundle;
+use crate::{component, query};
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EntityId(usize);
@@ -64,24 +64,24 @@ impl EntityInfo {
         components.add(id, components_manager)
     }
 
-    pub(crate) fn is_valid_query(
+    pub(crate) fn is_valid_for_query(
         &self,
         query_bitmask: &EntityBitmask,
         restrictions_bitmask: &EntityBitmask,
     ) -> bool {
-        self.bitmask.is_superset(&query_bitmask) && self.bitmask.is_disjoint(&restrictions_bitmask)
+        self.bitmask.is_superset(query_bitmask) && self.bitmask.is_disjoint(restrictions_bitmask)
     }
 
     pub(crate) fn component_indexes_from_bitmask(
         &self,
         query_bitmask: &EntityBitmask,
     ) -> Box<[usize]> {
-        self.component_indexes
+        self.bitmask
             .iter()
             .enumerate()
-            .filter_map(|(i, &index)| {
-                if query_bitmask.contains(i) {
-                    Some(index)
+            .filter_map(|(i, id)| {
+                if query_bitmask.contains(id) {
+                    Some(self.component_indexes[i])
                 } else {
                     None
                 }
@@ -92,7 +92,7 @@ impl EntityInfo {
 
 #[derive(Default, Debug)]
 pub(crate) struct EntityManager {
-    entities: Vec<EntityInfo>,
+    pub(crate) entities: Vec<EntityInfo>,
     next_id: usize,
 }
 
@@ -147,7 +147,7 @@ impl EntityManager {
         self.entities
             .iter()
             .filter_map(|entity_info| {
-                if entity_info.is_valid_query(query_bitmask, restrictions_bitmask) {
+                if entity_info.is_valid_for_query(query_bitmask, restrictions_bitmask) {
                     Some(entity_info.component_indexes_from_bitmask(query_bitmask))
                 } else {
                     None
