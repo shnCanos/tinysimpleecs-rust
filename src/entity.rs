@@ -2,7 +2,7 @@ use bit_set::BitSet;
 
 use crate::component;
 use crate::query::QueryInfo;
-use crate::Bundle;
+use crate::ComponentBundle;
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EntityId(usize);
@@ -58,7 +58,7 @@ impl EntityInfo {
 
     pub(crate) fn from_bundle(
         id: EntityId,
-        components: impl Bundle,
+        components: impl ComponentBundle,
         components_manager: &mut component::ComponentManager,
     ) -> Self {
         components.add(id, components_manager)
@@ -105,7 +105,7 @@ impl EntityManager {
 
     pub(crate) fn spawn(
         &mut self,
-        components: impl Bundle,
+        components: impl ComponentBundle,
         components_manager: &mut component::ComponentManager,
     ) -> EntityId {
         let new_entity_id = self.new_entity_id();

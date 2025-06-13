@@ -16,7 +16,7 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn implement_bundle(item: TokenStream) -> TokenStream {
+pub fn implement_component_bundle(item: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
     let len = input.len();
     let values: Vec<_> = input.into_iter().collect();
@@ -33,27 +33,8 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
         }
     });
 
-    let into_bitmask_implementations = values.iter().map(|type_name| {
-        quote! {
-            if let Some(id) = component_manager.get_component_id::<#type_name>() {
-                let had_inserted = bitset.insert(id);
-                debug_assert!(had_inserted, "Only one of each component type per entity allowed");
-
-                order[current_index].write(id);
-                current_index += 1;
-            }
-            // else { do nothing, components are added dynamically }
-        }
-    });
-
-    let from_indexes_implementations = values.iter().enumerate().map(|(i, value)| {
-        quote! {
-            component_manager.get_from_index::<#value>(order[#i]).unwrap(),
-        }
-    });
-
     quote! {
-        impl<#(#values: crate::component::Component),*> crate::Bundle for (#(#values,)*) {
+        impl<#(#values: crate::component::Component),*> crate::component::ComponentBundle for (#(#values,)*) {
             fn add(self, entity: crate::entity::EntityId, manager: &mut ComponentManager) -> crate::entity::EntityInfo {
                 let mut bitset = ::bit_set::BitSet::new();
 
@@ -64,25 +45,48 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
 
                 crate::entity::EntityInfo::new(entity, bitset.into(), unsafe {component_indexes.assume_init()})
             }
+        }
+    }.into()
+}
 
+#[proc_macro]
+pub fn implement_query_bundle(item: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
+    let len = input.len();
+    let values: Vec<_> = input.into_iter().collect();
+
+    quote! {
+        impl<#(#values: crate::component::Component),*> crate::query::QueryBundle for (#(#values,)*) {
+            type ResultType<'a> = (#(&'a #values,)*);
             fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder) {
                 let mut bitset = ::bit_set::BitSet::new();
-                let mut order = ::std::boxed::Box::<[usize]>::new_uninit_slice(#len);
+                let mut order = ::std::collections::HashMap::with_capacity(#len);
                 let mut current_index = 0;
 
-                #(#into_bitmask_implementations)*
+                #(
+                    if let Some(id) = component_manager.get_component_id::<#values>() {
+                        let had_inserted = bitset.insert(id);
+                        debug_assert!(had_inserted, "Only one of each component type per entity allowed");
 
-                (bitset.into(), unsafe { order.assume_init() })
+                        order.insert(id, current_index);
+                    }
+                    // else { do nothing, components are added dynamically }
+                )*
+
+                (bitset.into(), order)
             }
 
-            fn from_indexes(
-                bitmask: &EntityBitmask,
+            #[allow(clippy::unused_unit)]
+            fn from_indexes<'a>(
                 order: &ComponentOrder,
                 indexes: &[usize],
-                component_manager: &mut ComponentManager,
-            ) -> Self {
+                component_manager: &'a mut ComponentManager,
+            ) -> Self::ResultType<'a> {
                 (
-                    #(#from_indexes_implementations)*
+                    #({
+                        let current_id = component_manager.get_component_id::<#values>().unwrap();
+                        component_manager.get_from_index::<#values>(indexes[order[&current_id]]).unwrap()
+                    },)*
                 )
             }
         }

@@ -1,9 +1,8 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 
-use component::ComponentManager;
+use component::{ComponentBundle, ComponentManager};
 use entity::{EntityBitmask, EntityId, EntityInfo};
-use tinysimpleecs_rust_macros::implement_bundle;
 
 mod component;
 mod entity;
@@ -21,7 +20,7 @@ impl World {
         Self::default()
     }
 
-    pub(crate) fn spawn(&mut self, components: impl Bundle) -> EntityId {
+    pub(crate) fn spawn(&mut self, components: impl ComponentBundle) -> EntityId {
         self.entity_manager
             .spawn(components, &mut self.components_manager)
     }
@@ -39,26 +38,12 @@ pub struct Commands {
 }
 
 impl Commands {
-    pub fn spawn(&mut self, tospawn: impl Bundle + 'static) {
+    pub fn spawn(&mut self, tospawn: impl ComponentBundle + 'static) {
         self.actions_queue.push(Box::new(move |world: &mut World| {
             world.spawn(tospawn);
         }));
     }
 }
-
-type ComponentOrder = Box<[usize]>;
-pub trait Bundle {
-    fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
-    fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder);
-    fn from_indexes(
-        bitmask: &EntityBitmask,
-        order: &ComponentOrder,
-        indexes: &[usize],
-        component_manager: &mut ComponentManager,
-    ) -> Self;
-}
-
-variadics_please::all_tuples!(implement_bundle, 0, 15, B);
 
 #[cfg(test)]
 mod tests {
@@ -111,6 +96,12 @@ mod tests {
     #[test]
     fn query_entities() {
         let mut world = World::new();
-        const BANANA_STARTING: usize = 0;
+        let _ = world.spawn(((Banana {}),));
+        let _ = world.spawn((Banana {}, Banana2(23)));
+        let _ = world.spawn(((Banana2(23)),));
+
+        let query: Query<(Banana,), ()> =
+            Query::apply(&world.entity_manager, &mut world.components_manager);
+        dbg!(query.result);
     }
 }

@@ -5,8 +5,12 @@ use std::{
 };
 
 use any_vec::{any_value::AnyValueWrapper, AnyVec};
+use tinysimpleecs_rust_macros::implement_component_bundle;
 
-use crate::{entity::EntityBitmask, EntityId};
+use crate::{
+    entity::{EntityBitmask, EntityInfo},
+    EntityId,
+};
 
 pub(crate) type ComponentId = usize;
 pub(crate) type ComponentIndex = usize;
@@ -116,9 +120,12 @@ impl ComponentManager {
 
     pub(crate) fn get_from_index<C: Component>(&self, index: usize) -> Option<&C> {
         if let Some(collumn) = self.components.get(&TypeId::of::<C>()) {
-            return collumn
-                .get(index)
-                .map(|element_ref| element_ref.downcast_ref().unwrap());
+            return collumn.get(index).map(|element_ref| {
+                &element_ref
+                    .downcast_ref::<ComponentWrapper<C>>()
+                    .unwrap()
+                    .component
+            });
         }
         None
     }
@@ -131,3 +138,9 @@ impl ComponentManager {
 }
 
 pub trait Component: std::fmt::Debug + 'static {}
+
+pub trait ComponentBundle {
+    fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
+}
+
+variadics_please::all_tuples!(implement_component_bundle, 0, 15, B);
