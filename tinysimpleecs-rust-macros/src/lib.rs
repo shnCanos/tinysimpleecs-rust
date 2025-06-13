@@ -39,7 +39,7 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
                 let had_inserted = bitset.insert(id);
                 debug_assert!(had_inserted, "Only one of each component type per entity allowed");
 
-                order.insert(id, current_index);
+                order[current_index].write(id);
                 current_index += 1;
             }
             // else { do nothing, components are added dynamically }
@@ -47,9 +47,8 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
     });
 
     let from_indexes_implementations = values.iter().enumerate().map(|(i, value)| {
-        let idx = syn::Index::from(i);
         quote! {
-            newtuple.#idx = component_manager.get_from_index::<#value>(order[&#i]).unwrap();
+            component_manager.get_from_index::<#value>(order[#i]).unwrap(),
         }
     });
 
@@ -59,7 +58,7 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
                 let mut bitset = ::bit_set::BitSet::new();
 
                 let mut component_indexes = ::std::boxed::Box::<[usize]>::new_uninit_slice(#len);
-                let mut current_index = 1;
+                let mut current_index = 0;
 
                 #(#add_implementations)*
 
@@ -68,12 +67,12 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
 
             fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder) {
                 let mut bitset = ::bit_set::BitSet::new();
-                let mut order = ::std::collections::HashMap::new();
+                let mut order = ::std::boxed::Box::<[usize]>::new_uninit_slice(#len);
                 let mut current_index = 0;
 
                 #(#into_bitmask_implementations)*
 
-                (bitset.into(), order)
+                (bitset.into(), unsafe { order.assume_init() })
             }
 
             fn from_indexes(
@@ -82,12 +81,9 @@ pub fn implement_bundle(item: TokenStream) -> TokenStream {
                 indexes: &[usize],
                 component_manager: &mut ComponentManager,
             ) -> Self {
-                // SAFETY: All indexes are written
-                let mut newtuple: Self = unsafe { ::std::mem::MaybeUninit::uninit().assume_init() };
-
-                #(#from_indexes_implementations)*
-
-                newtuple
+                (
+                    #(#from_indexes_implementations)*
+                )
             }
         }
     }.into()

@@ -43,7 +43,7 @@ impl<Values: Bundle, Restrictions: Bundle> QueryInfo<Values, Restrictions> {
 }
 
 pub struct Query<Values: Bundle, Restrictions: Bundle> {
-    result: Box<[Values]>,
+    pub(crate) result: Box<[Values]>,
     _values: PhantomData<Values>,
     _restrictions: PhantomData<Restrictions>,
 }

@@ -1,8 +1,6 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 
-use std::collections::HashMap;
-
 use component::ComponentManager;
 use entity::{EntityBitmask, EntityId, EntityInfo};
 use tinysimpleecs_rust_macros::implement_bundle;
@@ -48,7 +46,7 @@ impl Commands {
     }
 }
 
-type ComponentOrder = HashMap<usize, usize>;
+type ComponentOrder = Box<[usize]>;
 pub trait Bundle {
     fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
     fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder);
@@ -64,6 +62,8 @@ variadics_please::all_tuples!(implement_bundle, 0, 15, B);
 
 #[cfg(test)]
 mod tests {
+    use crate::query::Query;
+
     use super::component::*;
     use super::*;
     use bit_set::BitSet;
