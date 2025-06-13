@@ -54,7 +54,6 @@ pub(crate) struct QueryResult<ResultType> {
 
 pub struct Query<'a, Values: QueryBundle, Restrictions: QueryBundle> {
     pub(crate) results: Box<[QueryResult<Values::ResultType<'a>>]>,
-    _values: PhantomData<Values>,
     _restrictions: PhantomData<Restrictions>,
 }
 
@@ -62,7 +61,6 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restr
     fn new(results: Box<[QueryResult<Values::ResultType<'a>>]>) -> Self {
         Self {
             results,
-            _values: PhantomData,
             _restrictions: PhantomData,
         }
     }
