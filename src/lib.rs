@@ -94,14 +94,66 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "duplicate component type in query")]
+    fn test_query_with_duplicate_component_panics() {
+        let mut world = World::new();
+        let _ = world.spawn((Banana {},));
+
+        // This should panic due to repeated component type `Banana`
+        let _query: Query<(Banana, Banana), ()> =
+            unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate component type in entity")]
+    fn test_entity_with_duplicate_component_panics() {
+        let mut world = World::new();
+
+        // This should panic because `Banana` appears twice
+        let _ = world.spawn((Banana {}, Banana {}));
+    }
+
+    #[test]
     fn query_entities() {
         let mut world = World::new();
         let _ = world.spawn(((Banana {}),));
         let _ = world.spawn((Banana {}, Banana2(23)));
-        let _ = world.spawn(((Banana2(23)),));
+        let _ = world.spawn(((Banana2(24)),));
 
-        let query: Query<(Banana,), ()> =
-            Query::apply(&world.entity_manager, &mut world.components_manager);
-        dbg!(query.result);
+        // SAFETY: no two queries are alive at the same time, therefore it's safe
+
+        {
+            let query1: Query<(Banana,), ()> =
+                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            assert_eq!(query1.result.len(), 2);
+        }
+
+        {
+            let query2: Query<(Banana2,), ()> =
+                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            assert_eq!(query2.result.len(), 2);
+            assert_eq!(query2.result[0].0 .0, 23);
+            assert_eq!(query2.result[1].0 .0, 24);
+            query2.result[1].0 .0 += 1;
+        }
+
+        {
+            let queryboth: Query<(Banana, Banana2), ()> =
+                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            assert_eq!(queryboth.result.len(), 1);
+        }
+
+        {
+            let query1butnotboth: Query<(Banana,), (Banana2,)> =
+                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            assert_eq!(query1butnotboth.result.len(), 1);
+        }
+
+        {
+            // Re-run the query to check new state
+            let query2_updated: Query<(Banana2,), ()> =
+                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            assert_eq!(query2_updated.result[1].0 .0, 25);
+        }
     }
 }

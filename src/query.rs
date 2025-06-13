@@ -62,7 +62,11 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restr
         }
     }
 
-    pub fn apply(entity_manager: &EntityManager, component_manager: &mut ComponentManager) -> Self {
+    /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.
+    pub unsafe fn apply(
+        entity_manager: &EntityManager,
+        component_manager: &mut ComponentManager,
+    ) -> Self {
         let info: QueryInfo<Values, Restrictions> =
             QueryInfo::new::<Values, Restrictions>(component_manager);
         // NOTE: The results are ordered by component_id
@@ -74,8 +78,7 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restr
                 Values::from_indexes(
                     &info.query_order,
                     indexes,
-                    // SAFETY: shuddup! This FnMut ain't about to go anywhere!
-                    unsafe { &mut *(component_manager as *mut ComponentManager) },
+                    component_manager as *mut ComponentManager,
                 )
             })
             .collect();
@@ -88,10 +91,11 @@ type ComponentOrder = HashMap<ComponentId, usize>;
 pub trait QueryBundle {
     type ResultType<'a>;
     fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder);
-    fn from_indexes<'a>(
+    /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.
+    unsafe fn from_indexes<'a>(
         order: &ComponentOrder,
         indexes: &[usize],
-        component_manager: &'a mut ComponentManager,
+        component_manager: *mut ComponentManager,
     ) -> Self::ResultType<'a>;
 }
 

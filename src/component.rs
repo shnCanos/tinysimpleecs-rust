@@ -118,11 +118,11 @@ impl ComponentManager {
         self.components.contains_key(&TypeId::of::<C>())
     }
 
-    pub(crate) fn get_from_index<C: Component>(&self, index: usize) -> Option<&C> {
-        if let Some(collumn) = self.components.get(&TypeId::of::<C>()) {
-            return collumn.get(index).map(|element_ref| {
-                &element_ref
-                    .downcast_ref::<ComponentWrapper<C>>()
+    pub(crate) fn get_from_index<C: Component>(&mut self, index: usize) -> Option<&mut C> {
+        if let Some(collumn) = self.components.get_mut(&TypeId::of::<C>()) {
+            return collumn.get_mut(index).map(|mut element_ref| {
+                &mut element_ref
+                    .downcast_mut::<ComponentWrapper<C>>()
                     .unwrap()
                     .component
             });
