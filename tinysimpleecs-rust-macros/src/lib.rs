@@ -2,7 +2,6 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse::Parse;
 
 #[proc_macro_derive(Component)]
 pub fn derive_component(item: TokenStream) -> TokenStream {
@@ -69,6 +68,7 @@ pub fn implement_query_bundle(item: TokenStream) -> TokenStream {
                         debug_assert!(had_inserted, "Only one of each component type per entity allowed");
 
                         order.insert(id, current_index);
+                        current_index += 1;
                     }
                     // else { do nothing, components are added dynamically }
                 )*
