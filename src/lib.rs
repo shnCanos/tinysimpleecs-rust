@@ -123,37 +123,46 @@ mod tests {
         // SAFETY: no two queries are alive at the same time, therefore it's safe
 
         {
-            let query1: Query<(Banana,), ()> =
+            let query: Query<(Banana,), ()> =
                 unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
-            assert_eq!(query1.result.len(), 2);
+            assert_eq!(query.results[0].entity, EntityId::new(0));
+            assert_eq!(query.results[1].entity, EntityId::new(1));
+            assert_eq!(query.results.len(), 2);
         }
 
         {
-            let query2: Query<(Banana2,), ()> =
+            let query: Query<(Banana2,), ()> =
                 unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
-            assert_eq!(query2.result.len(), 2);
-            assert_eq!(query2.result[0].0 .0, 23);
-            assert_eq!(query2.result[1].0 .0, 24);
-            query2.result[1].0 .0 += 1;
+            assert_eq!(query.results.len(), 2);
+            assert_eq!(query.results[0].entity, EntityId::new(1));
+            assert_eq!(query.results[1].entity, EntityId::new(2));
+            assert_eq!(query.results[1].components.0 .0, 24);
+            assert_eq!(query.results[0].components.0 .0, 23);
+            assert_eq!(query.results[1].components.0 .0, 24);
+            query.results[1].components.0 .0 += 1;
         }
 
         {
-            let queryboth: Query<(Banana, Banana2), ()> =
+            let query: Query<(Banana, Banana2), ()> =
                 unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
-            assert_eq!(queryboth.result.len(), 1);
+            assert_eq!(query.results.len(), 1);
+            assert_eq!(query.results[0].entity, EntityId::new(1));
         }
 
         {
-            let query1butnotboth: Query<(Banana,), (Banana2,)> =
+            let query: Query<(Banana,), (Banana2,)> =
                 unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
-            assert_eq!(query1butnotboth.result.len(), 1);
+            assert_eq!(query.results.len(), 1);
+            assert_eq!(query.results[0].entity, EntityId::new(0));
         }
 
         {
             // Re-run the query to check new state
-            let query2_updated: Query<(Banana2,), ()> =
+            let query: Query<(Banana2,), ()> =
                 unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
-            assert_eq!(query2_updated.result[1].0 .0, 25);
+            assert_eq!(query.results[0].entity, EntityId::new(1));
+            assert_eq!(query.results[1].entity, EntityId::new(2));
+            assert_eq!(query.results[1].components.0 .0, 25);
         }
     }
 }

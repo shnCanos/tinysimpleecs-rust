@@ -143,12 +143,15 @@ impl EntityManager {
         &self,
         query_bitmask: &EntityBitmask,
         restrictions_bitmask: &EntityBitmask,
-    ) -> Box<[Box<[usize]>]> {
+    ) -> Box<[(EntityId, Box<[usize]>)]> {
         self.entities
             .iter()
             .filter_map(|entity_info| {
                 if entity_info.is_valid_for_query(query_bitmask, restrictions_bitmask) {
-                    Some(entity_info.component_indexes_from_bitmask(query_bitmask))
+                    Some((
+                        entity_info.id,
+                        entity_info.component_indexes_from_bitmask(query_bitmask),
+                    ))
                 } else {
                     None
                 }

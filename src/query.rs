@@ -8,7 +8,7 @@ use tinysimpleecs_rust_macros::implement_query_bundle;
 
 use crate::{
     component::{ComponentBundle, ComponentId, ComponentManager},
-    entity::{EntityBitmask, EntityManager},
+    entity::{EntityBitmask, EntityId, EntityManager},
 };
 
 pub struct QueryInfo<Values: QueryBundle, Restrictions: QueryBundle> {
@@ -47,16 +47,21 @@ impl<Values: QueryBundle, Restrictions: QueryBundle> QueryInfo<Values, Restricti
     }
 }
 
+pub(crate) struct QueryResult<ResultType> {
+    pub(crate) entity: EntityId,
+    pub(crate) components: ResultType,
+}
+
 pub struct Query<'a, Values: QueryBundle, Restrictions: QueryBundle> {
-    pub(crate) result: Box<[Values::ResultType<'a>]>,
+    pub(crate) results: Box<[QueryResult<Values::ResultType<'a>>]>,
     _values: PhantomData<Values>,
     _restrictions: PhantomData<Restrictions>,
 }
 
 impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restrictions> {
-    fn new(result: Box<[Values::ResultType<'a>]>) -> Self {
+    fn new(results: Box<[QueryResult<Values::ResultType<'a>>]>) -> Self {
         Self {
-            result,
+            results,
             _values: PhantomData,
             _restrictions: PhantomData,
         }
@@ -74,12 +79,13 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restr
 
         let result = indexes_slice
             .into_iter()
-            .map(|indexes| {
-                Values::from_indexes(
+            .map(|(entity, indexes)| QueryResult {
+                entity: *entity,
+                components: Values::from_indexes(
                     &info.query_order,
                     indexes,
                     component_manager as *mut ComponentManager,
-                )
+                ),
             })
             .collect();
 
