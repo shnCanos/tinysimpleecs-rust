@@ -53,7 +53,7 @@ pub fn implement_query_bundle(item: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
     let len = input.len();
     let values: Vec<_> = input.into_iter().collect();
-    let idx: Vec<_> = (0..values.len()).map(|i| syn::Index::from(i)).collect();
+    let idx: Vec<_> = (0..values.len()).map(syn::Index::from).collect();
 
     quote! {
         impl<#(#values: crate::component::Component),*> crate::query::QueryBundle for (#(#values,)*) {
