@@ -38,7 +38,7 @@ impl SystemsManager {
     }
 }
 
-struct SystemRunError {
+pub(crate) struct SystemRunError {
     query_string: String,
     component: ComponentId,
     err: SystemRunErrorType,
@@ -73,6 +73,7 @@ enum SystemRunErrorType {
 macro_rules! impl_system_fnptr {
     ($(($n:tt, $S:ident)),*) => {
         impl<$($S: SystemArg + 'static),*> System for fn($($S,)*) {
+            #[allow(unused_variables, unused_mut)]
             fn run(&self, world: &mut World) -> Result<(), SystemRunError> {
                 // SAFETY:
                 //     - No two queries may query the same component
@@ -104,6 +105,7 @@ macro_rules! impl_system_fnptr {
 
         // If the function is unsafe, ignore the safety checks
         impl<$($S: SystemArg + 'static),*> System for unsafe fn($($S,)*) {
+            #[allow(unused_variables)]
             fn run(&self, world: &mut World) -> Result<(), SystemRunError> {
                 unsafe {self($($S::init(world),)*)};
                 Ok(())
