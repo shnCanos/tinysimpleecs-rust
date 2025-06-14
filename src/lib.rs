@@ -1,17 +1,17 @@
-#![feature(alloc_layout_extra)]
-#![feature(allocator_api)]
-
 use component::ComponentBundle;
 use entity::EntityId;
+use system::{System, SystemBundle};
 
 mod component;
 mod entity;
 mod query;
+mod system;
 
 #[derive(Default)]
 pub struct World {
     components_manager: component::ComponentManager,
     entity_manager: entity::EntityManager,
+    systems_manager: system::SystemsManager,
     commands: Commands,
 }
 
@@ -27,6 +27,10 @@ impl World {
 
     pub(crate) fn despawn(&mut self, entity: &entity::EntityId) {
         self.entity_manager.despawn(entity);
+    }
+
+    pub(crate) fn add_systems(&mut self, systems: impl SystemBundle) {
+        self.systems_manager.add_systems(systems);
     }
 }
 
@@ -53,6 +57,7 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use crate::query::Query;
+    use crate::system::SystemArg;
 
     use super::component::*;
     use super::*;
@@ -105,8 +110,7 @@ mod tests {
         let _ = world.spawn((Banana {},));
 
         // This should panic due to repeated component type `Banana`
-        let _query: Query<(Banana, Banana), ()> =
-            unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+        let _query: Query<(Banana, Banana), ()> = unsafe { Query::init(&mut world) };
     }
 
     #[test]
@@ -128,16 +132,14 @@ mod tests {
         // SAFETY: no two queries are alive at the same time, therefore it's safe
 
         {
-            let query: Query<(Banana,), ()> =
-                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            let query: Query<(Banana,), ()> = unsafe { Query::init(&mut world) };
             assert_eq!(query.results[0].entity, EntityId::new(0));
             assert_eq!(query.results[1].entity, EntityId::new(1));
             assert_eq!(query.results.len(), 2);
         }
 
         {
-            let query: Query<(Banana2,), ()> =
-                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            let query: Query<(Banana2,), ()> = unsafe { Query::init(&mut world) };
             assert_eq!(query.results.len(), 2);
             assert_eq!(query.results[0].entity, EntityId::new(1));
             assert_eq!(query.results[1].entity, EntityId::new(2));
@@ -148,26 +150,37 @@ mod tests {
         }
 
         {
-            let query: Query<(Banana, Banana2), ()> =
-                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            let query: Query<(Banana, Banana2), ()> = unsafe { Query::init(&mut world) };
             assert_eq!(query.results.len(), 1);
             assert_eq!(query.results[0].entity, EntityId::new(1));
         }
 
         {
-            let query: Query<(Banana,), (Banana2,)> =
-                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            let query: Query<(Banana,), (Banana2,)> = unsafe { Query::init(&mut world) };
             assert_eq!(query.results.len(), 1);
             assert_eq!(query.results[0].entity, EntityId::new(0));
         }
 
         {
             // Re-run the query to check new state
-            let query: Query<(Banana2,), ()> =
-                unsafe { Query::apply(&world.entity_manager, &mut world.components_manager) };
+            let query: Query<(Banana2,), ()> = unsafe { Query::init(&mut world) };
             assert_eq!(query.results[0].entity, EntityId::new(1));
             assert_eq!(query.results[1].entity, EntityId::new(2));
             assert_eq!(query.results[1].components.0 .0, 25);
         }
+    }
+
+    #[test]
+    fn systems() {
+        fn print_me() {
+            println!("Hello!");
+        }
+
+        let mut world = World::new();
+        let _ = world.spawn(((Banana {}),));
+        let _ = world.spawn((Banana {}, Banana2(23)));
+        let _ = world.spawn(((Banana2(24)),));
+
+        world.add_systems((print_me,));
     }
 }

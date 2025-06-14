@@ -4,42 +4,43 @@ use tinysimpleecs_rust_macros::implement_query_bundle;
 
 use crate::{
     component::{ComponentId, ComponentManager},
-    entity::{EntityBitmask, EntityId, EntityManager},
+    entity::{EntityBitmask, EntityId},
+    system::SystemArg,
 };
 
-pub struct QueryInfo<Values: QueryBundle, Restrictions: QueryBundle> {
-    query_bitmask: EntityBitmask,
-    restrictions_bitmask: EntityBitmask,
+pub(crate) struct QueryInfo {
+    pub(crate) query_bitmask: EntityBitmask,
+    pub(crate) restrictions_bitmask: EntityBitmask,
     query_order: ComponentOrder,
-    _values: PhantomData<Values>,
-    _restrictions: PhantomData<Restrictions>,
 }
 
-impl<Values: QueryBundle, Restrictions: QueryBundle> QueryInfo<Values, Restrictions> {
-    pub fn new<V: QueryBundle, R: QueryBundle>(component_manager: &mut ComponentManager) -> Self {
-        let (query_bitmask, query_order) = V::into_bitmask(component_manager);
-        let (restrictions_bitmask, _) = R::into_bitmask(component_manager);
-
-        let query_bitmask = Self {
+impl QueryInfo {
+    pub(crate) fn new(
+        query_bitmask: EntityBitmask,
+        restrictions_bitmask: EntityBitmask,
+        query_order: ComponentOrder,
+    ) -> Self {
+        Self {
             query_bitmask,
             restrictions_bitmask,
             query_order,
-            _values: PhantomData,
-            _restrictions: PhantomData,
-        };
-
-        debug_assert!(query_bitmask
-            .query_bitmask
-            .is_disjoint(&query_bitmask.restrictions_bitmask));
-
-        query_bitmask
+        }
     }
 
-    pub fn from_query<V: QueryBundle, R: QueryBundle>(
-        component_manager: &mut ComponentManager,
-        _query: &Query<V, R>,
+    pub(crate) fn from_query<V: QueryBundle, R: QueryBundle>(
+        components_manager: &mut ComponentManager,
     ) -> Self {
-        Self::new::<V, R>(component_manager)
+        let (query_bitmask, query_order) = V::into_bitmask(components_manager);
+        let (restrictions_bitmask, _) = R::into_bitmask(components_manager);
+        let new_info = Self {
+            query_bitmask,
+            restrictions_bitmask,
+            query_order,
+        };
+        debug_assert!(new_info
+            .query_bitmask
+            .is_disjoint(&new_info.restrictions_bitmask));
+        new_info
     }
 }
 
@@ -50,26 +51,31 @@ pub(crate) struct QueryResult<ResultType> {
 
 pub struct Query<'a, Values: QueryBundle, Restrictions: QueryBundle> {
     pub(crate) results: Box<[QueryResult<Values::ResultType<'a>>]>,
+    pub(crate) info: QueryInfo,
     _restrictions: PhantomData<Restrictions>,
 }
 
 impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restrictions> {
-    fn new(results: Box<[QueryResult<Values::ResultType<'a>>]>) -> Self {
+    fn new(results: Box<[QueryResult<Values::ResultType<'a>>]>, info: QueryInfo) -> Self {
         Self {
             results,
+            info,
             _restrictions: PhantomData,
         }
     }
+}
 
+impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemArg
+    for Query<'a, Values, Restrictions>
+{
     /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.
-    pub unsafe fn apply(
-        entity_manager: &EntityManager,
-        component_manager: &mut ComponentManager,
-    ) -> Self {
-        let info: QueryInfo<Values, Restrictions> =
-            QueryInfo::new::<Values, Restrictions>(component_manager);
+    unsafe fn init(world: *mut crate::World) -> Self {
+        let info: QueryInfo =
+            QueryInfo::from_query::<Values, Restrictions>(&mut (*world).components_manager);
         // NOTE: The results are ordered by component_id
-        let indexes_slice = entity_manager.query(&info.query_bitmask, &info.restrictions_bitmask);
+        let indexes_slice = (*world)
+            .entity_manager
+            .query(&info.query_bitmask, &info.restrictions_bitmask);
 
         let result = indexes_slice
             .into_iter()
@@ -78,12 +84,16 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restr
                 components: Values::from_indexes(
                     &info.query_order,
                     indexes,
-                    component_manager as *mut ComponentManager,
+                    &mut (*world).components_manager,
                 ),
             })
             .collect();
 
-        Self::new(result)
+        Self::new(result, info)
+    }
+
+    fn query_info(&self) -> Option<&QueryInfo> {
+        Some(&self.info)
     }
 }
 
