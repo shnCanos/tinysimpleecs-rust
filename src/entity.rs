@@ -1,8 +1,7 @@
 use bit_set::BitSet;
 
-use crate::query::QueryInfo;
+use crate::component;
 use crate::ComponentBundle;
-use crate::{component, query};
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EntityId(usize);

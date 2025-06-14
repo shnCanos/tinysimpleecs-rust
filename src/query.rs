@@ -1,13 +1,9 @@
-use std::{
-    collections::{BinaryHeap, HashMap},
-    marker::PhantomData,
-    mem::MaybeUninit,
-};
+use std::{collections::HashMap, marker::PhantomData};
 
 use tinysimpleecs_rust_macros::implement_query_bundle;
 
 use crate::{
-    component::{ComponentBundle, ComponentId, ComponentManager},
+    component::{ComponentId, ComponentManager},
     entity::{EntityBitmask, EntityId, EntityManager},
 };
 

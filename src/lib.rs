@@ -1,8 +1,8 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 
-use component::{ComponentBundle, ComponentManager};
-use entity::{EntityBitmask, EntityId, EntityInfo};
+use component::ComponentBundle;
+use entity::EntityId;
 
 mod component;
 mod entity;
@@ -41,6 +41,11 @@ impl Commands {
     pub fn spawn(&mut self, tospawn: impl ComponentBundle + 'static) {
         self.actions_queue.push(Box::new(move |world: &mut World| {
             world.spawn(tospawn);
+        }));
+    }
+    pub fn despawn(&mut self, todespawn: EntityId) {
+        self.actions_queue.push(Box::new(move |world: &mut World| {
+            world.despawn(&todespawn);
         }));
     }
 }

@@ -7,10 +7,7 @@ use std::{
 use any_vec::{any_value::AnyValueWrapper, AnyVec};
 use tinysimpleecs_rust_macros::implement_component_bundle;
 
-use crate::{
-    entity::{EntityBitmask, EntityInfo},
-    EntityId,
-};
+use crate::{entity::EntityInfo, EntityId};
 
 pub(crate) type ComponentId = usize;
 pub(crate) type ComponentIndex = usize;
