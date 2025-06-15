@@ -30,29 +30,27 @@ macro_rules! impl_into_system {
                 //     - A component queried by a certain query must be
                 //         in the restrictions of the others
 
-                Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| {
+                Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| -> Result<(), SystemParamError> {
                     let mut consumed_bitmask = BitSet::new();
                     self($({
                         let current = unsafe {$A::init(args)};
                         if let Some(info) = current.query_info() {
                             if let Some(repeated) = info.query_bitmask.intersection(&consumed_bitmask).next() {
-                                panic!("Repeated!");
-                                // return Err(SystemParamTupleError::new::<$A>(
-                                //     repeated,
-                                //     SystemParamErrorType::RepeatedComponent
-                                // ));
+                                return Err(SystemParamError::new::<$A>(
+                                    repeated,
+                                    SystemParamErrorType::RepeatedComponent
+                                ));
                             }
                             if let Some(difference) = info.restrictions_bitmask.difference(&consumed_bitmask).next() {
-                                panic!("Make it different!");
-                                // return Err(SystemParamTupleError::new::<$A>(
-                                //     difference,
-                                //     SystemParamErrorType::MustRestrict
-                                // ))
+                                return Err(SystemParamError::new::<$A>(
+                                    difference,
+                                    SystemParamErrorType::MustRestrict
+                                ))
                             }
                             consumed_bitmask.union_with(&info.query_bitmask);
                         }
                         current
-                },)*)})))
+                },)*); Ok(())})))
             }
         }
     };
@@ -61,26 +59,28 @@ macro_rules! impl_into_system {
 variadics_please::all_tuples!(impl_into_system, 0, 15, A);
 
 enum EcsSystemError {
-    SystemParamTupleError(SystemParamTupleError),
+    Param(SystemParamError),
 }
 
 pub(crate) trait System: 'static {
-    fn run(&self, args: &mut SystemWorldArgs);
+    fn run(&self, args: &mut SystemWorldArgs) -> Result<(), SystemParamError>;
 }
 
-pub(crate) struct SystemWrapper<F: Fn(&mut SystemWorldArgs)> {
+pub(crate) struct SystemWrapper<F: Fn(&mut SystemWorldArgs) -> Result<(), SystemParamError>> {
     fptr: F,
 }
 
-impl<F: Fn(&mut SystemWorldArgs)> SystemWrapper<F> {
+impl<F: Fn(&mut SystemWorldArgs) -> Result<(), SystemParamError>> SystemWrapper<F> {
     pub(crate) fn new(fptr: F) -> Self {
         Self { fptr }
     }
 }
 
-impl<F: Fn(&mut SystemWorldArgs) + 'static> System for SystemWrapper<F> {
-    fn run(&self, args: &mut SystemWorldArgs) {
-        (self.fptr)(args);
+impl<F: Fn(&mut SystemWorldArgs) -> Result<(), SystemParamError> + 'static> System
+    for SystemWrapper<F>
+{
+    fn run(&self, args: &mut SystemWorldArgs) -> Result<(), SystemParamError> {
+        (self.fptr)(args)
     }
 }
 
@@ -100,8 +100,11 @@ impl SystemsManager {
 
     pub(crate) fn run_all(&self, mut args: SystemWorldArgs) {
         for system in &self.systems {
-            system.run(&mut args);
+            system.run(&mut args).unwrap();
         }
+
+        args.commands
+            .apply(args.entity_manager, args.components_manager);
     }
 }
 
