@@ -2,15 +2,20 @@ use std::{fmt, marker::PhantomData};
 
 use bit_set::BitSet;
 
-use crate::{component::ComponentId, entity::EntityBitmask, query::QueryInfo, World};
+use crate::{
+    component::ComponentId,
+    entity::{EntityBitmask, EntityManager},
+    query::QueryInfo,
+    SystemWorldArgs, World,
+};
 
 pub(crate) trait SystemParam {
-    unsafe fn init(world: *mut World) -> Self;
+    unsafe fn init(args: *mut SystemWorldArgs) -> Self;
     fn query_info(&self) -> Option<&QueryInfo>;
 }
 
 pub(crate) trait IntoSystem<T> {
-    fn parse(self) -> Result<Box<dyn System>, SystemParamTupleError>;
+    fn parse(self) -> Result<Box<dyn System>, SystemParamError>;
 }
 
 macro_rules! impl_into_system {
@@ -19,16 +24,16 @@ macro_rules! impl_into_system {
         where
             F: Fn($($A,)*) + 'static
         {
-            fn parse(self) -> Result<Box<dyn System>, SystemParamTupleError> {
+            fn parse(self) -> Result<Box<dyn System>, SystemParamError> {
                 // SAFETY:
                 //     - No two queries may query the same component
                 //     - A component queried by a certain query must be
                 //         in the restrictions of the others
 
-                Ok(Box::new(SystemWrapper::new(move |world: &mut World| {
+                Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| {
                     let mut consumed_bitmask = BitSet::new();
                     self($({
-                        let current = unsafe {$A::init(world)};
+                        let current = unsafe {$A::init(args)};
                         if let Some(info) = current.query_info() {
                             if let Some(repeated) = info.query_bitmask.intersection(&consumed_bitmask).next() {
                                 panic!("Repeated!");
@@ -60,27 +65,23 @@ enum EcsSystemError {
 }
 
 pub(crate) trait System: 'static {
-    fn run(&self, world: &mut World);
+    fn run(&self, args: &mut SystemWorldArgs);
 }
 
-pub(crate) struct SystemWrapper<F: Fn(&mut World)> {
+pub(crate) struct SystemWrapper<F: Fn(&mut SystemWorldArgs)> {
     fptr: F,
 }
 
-impl<F: Fn(&mut World)> SystemWrapper<F> {
+impl<F: Fn(&mut SystemWorldArgs)> SystemWrapper<F> {
     pub(crate) fn new(fptr: F) -> Self {
         Self { fptr }
     }
 }
 
-impl<F: Fn(&mut World) + 'static> System for SystemWrapper<F> {
-    fn run(&self, world: &mut World) {
-        (self.fptr)(world);
+impl<F: Fn(&mut SystemWorldArgs) + 'static> System for SystemWrapper<F> {
+    fn run(&self, args: &mut SystemWorldArgs) {
+        (self.fptr)(args);
     }
-}
-
-pub(crate) trait SystemParamTuple: 'static + Sized {
-    fn init(world: &mut World) -> Result<Self, SystemParamTupleError>;
 }
 
 #[derive(Default)]
@@ -97,20 +98,20 @@ impl SystemsManager {
         self.systems.push(system.parse().unwrap());
     }
 
-    pub(crate) fn run_all(&self, world: &mut World) {
+    pub(crate) fn run_all(&self, mut args: SystemWorldArgs) {
         for system in &self.systems {
-            system.run(world);
+            system.run(&mut args);
         }
     }
 }
 
-pub(crate) struct SystemParamTupleError {
+pub(crate) struct SystemParamError {
     query_string: String,
     component: ComponentId,
     err: SystemParamErrorType,
 }
 
-impl fmt::Debug for SystemParamTupleError {
+impl fmt::Debug for SystemParamError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -120,7 +121,7 @@ impl fmt::Debug for SystemParamTupleError {
     }
 }
 
-impl SystemParamTupleError {
+impl SystemParamError {
     fn new<Query>(component: ComponentId, err: SystemParamErrorType) -> Self {
         Self {
             query_string: std::any::type_name::<Query>().into(),

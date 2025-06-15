@@ -92,22 +92,15 @@ impl EntityInfo {
 #[derive(Default, Debug)]
 pub(crate) struct EntityManager {
     pub(crate) entities: Vec<EntityInfo>,
-    next_id: usize,
 }
 
 impl EntityManager {
-    fn new_entity_id(&mut self) -> EntityId {
-        let new_entity = EntityId::new(self.next_id);
-        self.next_id += 1;
-        new_entity
-    }
-
     pub(crate) fn spawn(
         &mut self,
+        new_entity_id: EntityId,
         components: impl ComponentBundle,
         components_manager: &mut component::ComponentManager,
     ) -> EntityId {
-        let new_entity_id = self.new_entity_id();
         let new_entity = EntityInfo::from_bundle(new_entity_id, components, components_manager);
         self.entities.push(new_entity);
         new_entity_id

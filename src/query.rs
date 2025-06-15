@@ -78,11 +78,11 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
     for Query<'a, Values, Restrictions>
 {
     /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.
-    unsafe fn init(world: *mut crate::World) -> Self {
+    unsafe fn init(args: *mut crate::SystemWorldArgs) -> Self {
         let info: QueryInfo =
-            QueryInfo::from_query::<Values, Restrictions>(&mut (*world).components_manager);
+            QueryInfo::from_query::<Values, Restrictions>((*args).components_manager);
         // NOTE: The results are ordered by component_id
-        let indexes_slice = (*world)
+        let indexes_slice = (*args)
             .entity_manager
             .query(&info.query_bitmask, &info.restrictions_bitmask);
 
@@ -93,7 +93,7 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
                 components: Values::from_indexes(
                     &info.query_order,
                     indexes,
-                    &mut (*world).components_manager,
+                    (*args).components_manager,
                 ),
             })
             .collect();
