@@ -1,6 +1,6 @@
 use component::ComponentBundle;
 use entity::EntityId;
-use system::{System, SystemBundle};
+use system::IntoSystem;
 
 mod component;
 mod entity;
@@ -29,8 +29,13 @@ impl World {
         self.entity_manager.despawn(entity);
     }
 
-    pub(crate) fn add_systems(&mut self, systems: impl SystemBundle) {
-        self.systems_manager.add_systems(systems);
+    pub(crate) fn add_system<T>(&mut self, system: impl IntoSystem<T>) {
+        self.systems_manager.add_system(system);
+    }
+
+    pub(crate) fn run_all_systems(&mut self) {
+        let worldptr = unsafe { (self as *mut World).as_mut().unwrap() };
+        self.systems_manager.run_all(worldptr);
     }
 }
 
@@ -57,7 +62,7 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use crate::query::Query;
-    use crate::system::SystemArg;
+    use crate::system::SystemParam;
 
     use super::component::*;
     use super::*;
@@ -170,17 +175,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn systems() {
-        fn print_me() {
-            println!("Hello!");
+    fn print_me(mut query: Query<(Banana2,), ()>) {
+        for result in &mut query.results {
+            dbg!(&result.components);
         }
+    }
 
+    #[test]
+    fn systems_test() {
         let mut world = World::new();
         let _ = world.spawn(((Banana {}),));
         let _ = world.spawn((Banana {}, Banana2(23)));
         let _ = world.spawn(((Banana2(24)),));
 
-        world.add_systems((print_me,));
+        world.add_system(print_me);
+        world.run_all_systems();
     }
 }

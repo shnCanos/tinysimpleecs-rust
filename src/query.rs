@@ -5,7 +5,7 @@ use tinysimpleecs_rust_macros::implement_query_bundle;
 use crate::{
     component::{ComponentId, ComponentManager},
     entity::{EntityBitmask, EntityId},
-    system::SystemArg,
+    system::SystemParam,
 };
 
 pub(crate) struct QueryInfo {
@@ -49,6 +49,15 @@ pub(crate) struct QueryResult<ResultType> {
     pub(crate) components: ResultType,
 }
 
+impl<ResultType> From<(EntityId, ResultType)> for QueryResult<ResultType> {
+    fn from(value: (EntityId, ResultType)) -> Self {
+        Self {
+            entity: value.0,
+            components: value.1,
+        }
+    }
+}
+
 pub struct Query<'a, Values: QueryBundle, Restrictions: QueryBundle> {
     pub(crate) results: Box<[QueryResult<Values::ResultType<'a>>]>,
     pub(crate) info: QueryInfo,
@@ -65,7 +74,7 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restr
     }
 }
 
-impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemArg
+impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
     for Query<'a, Values, Restrictions>
 {
     /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.

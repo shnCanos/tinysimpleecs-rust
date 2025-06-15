@@ -1,16 +1,86 @@
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 
 use bit_set::BitSet;
 
 use crate::{component::ComponentId, entity::EntityBitmask, query::QueryInfo, World};
 
-pub(crate) trait SystemArg {
+pub(crate) trait SystemParam {
     unsafe fn init(world: *mut World) -> Self;
     fn query_info(&self) -> Option<&QueryInfo>;
 }
 
+pub(crate) trait IntoSystem<T> {
+    fn parse(self) -> Result<Box<dyn System>, SystemParamTupleError>;
+}
+
+macro_rules! impl_into_system {
+    ($($A:ident),*) => {
+        impl<F, $($A: SystemParam,)*> IntoSystem<($($A,)*)> for F
+        where
+            F: Fn($($A,)*) + 'static
+        {
+            fn parse(self) -> Result<Box<dyn System>, SystemParamTupleError> {
+                // SAFETY:
+                //     - No two queries may query the same component
+                //     - A component queried by a certain query must be
+                //         in the restrictions of the others
+
+                Ok(Box::new(SystemWrapper::new(move |world: &mut World| {
+                    let mut consumed_bitmask = BitSet::new();
+                    self($({
+                        let current = unsafe {$A::init(world)};
+                        if let Some(info) = current.query_info() {
+                            if let Some(repeated) = info.query_bitmask.intersection(&consumed_bitmask).next() {
+                                panic!("Repeated!");
+                                // return Err(SystemParamTupleError::new::<$A>(
+                                //     repeated,
+                                //     SystemParamErrorType::RepeatedComponent
+                                // ));
+                            }
+                            if let Some(difference) = info.restrictions_bitmask.difference(&consumed_bitmask).next() {
+                                panic!("Make it different!");
+                                // return Err(SystemParamTupleError::new::<$A>(
+                                //     difference,
+                                //     SystemParamErrorType::MustRestrict
+                                // ))
+                            }
+                            consumed_bitmask.union_with(&info.query_bitmask);
+                        }
+                        current
+                },)*)})))
+            }
+        }
+    };
+}
+
+variadics_please::all_tuples!(impl_into_system, 0, 15, A);
+
+enum EcsSystemError {
+    SystemParamTupleError(SystemParamTupleError),
+}
+
 pub(crate) trait System: 'static {
-    fn run(&self, world: &mut World) -> Result<(), SystemRunError>;
+    fn run(&self, world: &mut World);
+}
+
+pub(crate) struct SystemWrapper<F: Fn(&mut World)> {
+    fptr: F,
+}
+
+impl<F: Fn(&mut World)> SystemWrapper<F> {
+    pub(crate) fn new(fptr: F) -> Self {
+        Self { fptr }
+    }
+}
+
+impl<F: Fn(&mut World) + 'static> System for SystemWrapper<F> {
+    fn run(&self, world: &mut World) {
+        (self.fptr)(world);
+    }
+}
+
+pub(crate) trait SystemParamTuple: 'static + Sized {
+    fn init(world: &mut World) -> Result<Self, SystemParamTupleError>;
 }
 
 #[derive(Default)]
@@ -23,28 +93,24 @@ impl SystemsManager {
         Self::default()
     }
 
-    pub(crate) fn add_system(&mut self, system: impl System) {
-        self.systems.push(Box::new(system));
-    }
-
-    pub(crate) fn add_systems(&mut self, systems: impl SystemBundle) {
-        systems.add_to(self);
+    pub(crate) fn add_system<T>(&mut self, system: impl IntoSystem<T>) {
+        self.systems.push(system.parse().unwrap());
     }
 
     pub(crate) fn run_all(&self, world: &mut World) {
         for system in &self.systems {
-            system.run(world).unwrap();
+            system.run(world);
         }
     }
 }
 
-pub(crate) struct SystemRunError {
+pub(crate) struct SystemParamTupleError {
     query_string: String,
     component: ComponentId,
-    err: SystemRunErrorType,
+    err: SystemParamErrorType,
 }
 
-impl fmt::Debug for SystemRunError {
+impl fmt::Debug for SystemParamTupleError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -54,8 +120,8 @@ impl fmt::Debug for SystemRunError {
     }
 }
 
-impl SystemRunError {
-    fn new<Query>(component: ComponentId, err: SystemRunErrorType) -> Self {
+impl SystemParamTupleError {
+    fn new<Query>(component: ComponentId, err: SystemParamErrorType) -> Self {
         Self {
             query_string: std::any::type_name::<Query>().into(),
             component,
@@ -65,69 +131,7 @@ impl SystemRunError {
 }
 
 #[derive(Debug)]
-enum SystemRunErrorType {
+enum SystemParamErrorType {
     RepeatedComponent,
     MustRestrict,
 }
-
-macro_rules! impl_system_fnptr {
-    ($(($n:tt, $S:ident)),*) => {
-        impl<$($S: SystemArg + 'static),*> System for fn($($S,)*) {
-            #[allow(unused_variables, unused_mut)]
-            fn run(&self, world: &mut World) -> Result<(), SystemRunError> {
-                // SAFETY:
-                //     - No two queries may query the same component
-                //     - A component queried by a certain query must be
-                //         in the restrictions of the others
-                let mut consumed_bitmask = BitSet::new();
-                self($({
-                    let current = unsafe {$S::init(world)};
-                    if let Some(info) = current.query_info() {
-                        if let Some(repeated) = info.query_bitmask.union(&consumed_bitmask).next() {
-                            return Err(SystemRunError::new::<$S>(
-                                repeated,
-                                SystemRunErrorType::RepeatedComponent
-                            ));
-                        }
-                        if let Some(difference) = info.query_bitmask.difference(&consumed_bitmask).next() {
-                            return Err(SystemRunError::new::<$S>(
-                                difference,
-                                SystemRunErrorType::MustRestrict
-                            ))
-                        }
-                        consumed_bitmask.union_with(&info.query_bitmask);
-                    }
-                    current
-                },)*);
-                Ok(())
-            }
-        }
-
-        // If the function is unsafe, ignore the safety checks
-        impl<$($S: SystemArg + 'static),*> System for unsafe fn($($S,)*) {
-            #[allow(unused_variables)]
-            fn run(&self, world: &mut World) -> Result<(), SystemRunError> {
-                unsafe {self($($S::init(world),)*)};
-                Ok(())
-            }
-        }
-    };
-}
-
-variadics_please::all_tuples_enumerated!(impl_system_fnptr, 0, 15, S);
-
-pub(crate) trait SystemBundle {
-    fn add_to(self, systems_manager: &mut SystemsManager);
-}
-
-macro_rules! impl_system_bundle {
-    ($(($n:tt, $S:ident)),*) => {
-        impl<$($S: System),*> SystemBundle for ($($S,)*) {
-            fn add_to(self, systems_manager: &mut SystemsManager) {
-                $(systems_manager.add_system(self.$n);)*
-            }
-        }
-    };
-}
-
-variadics_please::all_tuples_enumerated!(impl_system_bundle, 1, 15, S);
