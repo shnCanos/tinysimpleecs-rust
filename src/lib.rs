@@ -4,6 +4,9 @@ use component::{ComponentBundle, ComponentManager};
 use entity::{EntityId, EntityManager};
 use system::{IntoSystem, SafetyInfo, SystemParam, SystemParamError};
 
+pub use crate::component::Component;
+pub use crate::query::Query;
+
 mod component;
 mod entity;
 mod query;
@@ -66,11 +69,11 @@ impl World {
         self.entity_manager.despawn(entity);
     }
 
-    pub(crate) fn add_system<T>(&mut self, system: impl IntoSystem<T>) {
+    pub fn add_system<T>(&mut self, system: impl IntoSystem<T>) {
         self.systems_manager.add_system(system);
     }
 
-    pub(crate) fn run_all_systems(&mut self) -> Result<(), SystemParamError> {
+    pub fn run_all_systems(&mut self) -> Result<(), SystemParamError> {
         let args = SystemWorldArgs::new(
             &mut self.components_manager,
             &mut self.entity_manager,

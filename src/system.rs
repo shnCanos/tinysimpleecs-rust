@@ -156,7 +156,7 @@ impl SystemsManager {
     }
 }
 
-pub(crate) struct SystemParamError {
+pub struct SystemParamError {
     query_string: String,
     component: ComponentId,
     err: SystemParamErrorType,

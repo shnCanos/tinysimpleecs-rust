@@ -44,9 +44,10 @@ impl QueryInfo {
     }
 }
 
-pub(crate) struct QueryResult<ResultType> {
-    pub(crate) entity: EntityId,
-    pub(crate) components: ResultType,
+#[derive(Debug)]
+pub struct QueryResult<ResultType> {
+    pub entity: EntityId,
+    pub components: ResultType,
 }
 
 impl<ResultType> From<(EntityId, ResultType)> for QueryResult<ResultType> {
@@ -59,7 +60,7 @@ impl<ResultType> From<(EntityId, ResultType)> for QueryResult<ResultType> {
 }
 
 pub struct Query<'a, Values: QueryBundle, Restrictions: QueryBundle> {
-    pub(crate) results: Box<[QueryResult<Values::ResultType<'a>>]>,
+    pub results: Box<[QueryResult<Values::ResultType<'a>>]>,
     pub(crate) info: QueryInfo,
     _restrictions: PhantomData<Restrictions>,
 }
