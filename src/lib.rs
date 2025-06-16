@@ -6,6 +6,7 @@ use system::{IntoSystem, SafetyInfo, SystemParam, SystemParamError};
 
 pub use crate::component::Component;
 pub use crate::query::Query;
+pub use tinysimpleecs_rust_macros::Component;
 
 mod component;
 mod entity;

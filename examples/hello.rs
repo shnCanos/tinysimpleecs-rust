@@ -1,8 +1,7 @@
 use tinysimpleecs_rust::{Commands, Component, Query, World};
 
-#[derive(Debug)]
+#[derive(Debug, Component)]
 struct MyComponent(String);
-impl Component for MyComponent {}
 
 fn hello_there(commands: &mut Commands, query: Query<(MyComponent,), ()>) {
     commands.spawn((MyComponent("Hello".to_owned()),));
