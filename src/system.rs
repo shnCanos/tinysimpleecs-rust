@@ -36,7 +36,12 @@ impl SafetyCheck {
     ) -> Result<(), SystemParamError> {
         for component in info.query_bitmask.iter() {
             if let Some(restriction) = self.consumed_bitmasks.get_mut(&component) {
-                if info.query_bitmask.union(restriction).next().is_none() {
+                if info
+                    .query_bitmask
+                    .intersection(restriction)
+                    .next()
+                    .is_none()
+                {
                     return Err(SystemParamError::new::<P>(
                         component,
                         SystemParamErrorType::MustRestrict,
