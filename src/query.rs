@@ -4,6 +4,7 @@ use crate::{
     component::{ComponentId, ComponentManager},
     entity::{EntityBitmask, EntityId},
     system::{SafetyInfo, SystemParam},
+    SystemWorldArgs,
 };
 
 pub(crate) struct QueryInfo {
@@ -100,8 +101,11 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
         Self::new(result, info)
     }
 
-    fn safety_info(&self) -> Option<SafetyInfo> {
-        Some(SafetyInfo::Query(&self.info))
+    fn safety_info(args: &mut SystemWorldArgs) -> Option<SafetyInfo> {
+        Some(SafetyInfo::Query(QueryInfo::from_query::<
+            Values,
+            Restrictions,
+        >(args.components_manager)))
     }
 }
 
@@ -128,14 +132,12 @@ macro_rules! impl_query_bundle {
                 let mut current_index = 0;
 
                 $(
-                    if let Some(id) = component_manager.get_component_id::<$Q>() {
-                        let had_inserted = bitset.insert(id);
-                        debug_assert!(had_inserted, "duplicate component type in query");
+                    let id = component_manager.register_component_if_not_exists::<$Q>();
+                    let had_inserted = bitset.insert(id);
+                    debug_assert!(had_inserted, "duplicate component type in query");
 
-                        order.insert(id, current_index);
-                        current_index += 1;
-                    }
-                    // else { do nothing, components are added dynamically }
+                    order.insert(id, current_index);
+                    current_index += 1;
                 )*
 
                 (bitset.into(), order)

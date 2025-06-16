@@ -9,9 +9,9 @@ use crate::{
     SystemWorldArgs, World,
 };
 
-pub(crate) enum SafetyInfo<'a> {
+pub(crate) enum SafetyInfo {
     Commands,
-    Query(&'a QueryInfo),
+    Query(QueryInfo),
 }
 
 #[derive(Default)]
@@ -71,41 +71,40 @@ impl SafetyCheck {
     ) -> Result<(), SystemParamError> {
         match info {
             SafetyInfo::Commands => self.check_commands(),
-            SafetyInfo::Query(query_info) => self.check_query::<P>(query_info),
+            SafetyInfo::Query(query_info) => self.check_query::<P>(&query_info),
         }
     }
 }
 
 pub(crate) trait SystemParam {
     unsafe fn init(args: *mut SystemWorldArgs) -> Self;
-    fn safety_info<'a>(&'a self) -> Option<SafetyInfo<'a>>;
+    fn safety_info(args: &mut SystemWorldArgs) -> Option<SafetyInfo>;
 }
 
-pub(crate) trait IntoSystem<T> {
-    fn parse(self) -> Result<Box<dyn System>, SystemParamError>;
+pub trait IntoSystem<T> {
+    fn parse(self, args: &mut SystemWorldArgs) -> Result<Box<dyn System>, SystemParamError>;
 }
 
 macro_rules! impl_into_system {
     ($($A:ident),*) => {
-        impl<'a, F, $($A: SystemParam,)*> IntoSystem<($($A,)*)> for F
+        impl<F, $($A: SystemParam,)*> IntoSystem<($($A,)*)> for F
         where
             F: Fn($($A,)*) + 'static
         {
-            fn parse(self) -> Result<Box<dyn System>, SystemParamError> {
+            fn parse(self, args: &mut SystemWorldArgs) -> Result<Box<dyn System>, SystemParamError> {
+                let mut safety_check = SafetyCheck::new();
+                $(
+                    if let Some(info) = $A::safety_info(args) {
+                        safety_check.check::<$A>(info)?;
+                    }
+                )*
+
                 // SAFETY:
                 //     - No two queries may query the same component
                 //     - A component queried by a certain query must be
                 //         in the restrictions of the others
-
-                Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| -> Result<(), SystemParamError> {
-                    let mut safety_check = SafetyCheck::new();
-                    self($({
-                        let current = unsafe {$A::init(args)};
-                        if let Some(info) = current.safety_info() {
-                            safety_check.check::<$A>(info)?;
-                        }
-                        current
-                },)*); Ok(())})))
+                //     - No two mutable references to Commands may coexist
+                Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| self($(unsafe {$A::init(args)},)*))))
             }
         }
     };
@@ -117,24 +116,22 @@ enum EcsSystemError {
     Param(SystemParamError),
 }
 
-pub(crate) trait System: 'static {
-    fn run(&self, args: &mut SystemWorldArgs) -> Result<(), SystemParamError>;
+pub trait System: 'static {
+    fn run(&self, args: &mut SystemWorldArgs);
 }
 
-pub(crate) struct SystemWrapper<F: Fn(&mut SystemWorldArgs) -> Result<(), SystemParamError>> {
+pub(crate) struct SystemWrapper<F: Fn(&mut SystemWorldArgs)> {
     fptr: F,
 }
 
-impl<F: Fn(&mut SystemWorldArgs) -> Result<(), SystemParamError>> SystemWrapper<F> {
+impl<F: Fn(&mut SystemWorldArgs)> SystemWrapper<F> {
     pub(crate) fn new(fptr: F) -> Self {
         Self { fptr }
     }
 }
 
-impl<F: Fn(&mut SystemWorldArgs) -> Result<(), SystemParamError> + 'static> System
-    for SystemWrapper<F>
-{
-    fn run(&self, args: &mut SystemWorldArgs) -> Result<(), SystemParamError> {
+impl<F: Fn(&mut SystemWorldArgs) + 'static> System for SystemWrapper<F> {
+    fn run(&self, args: &mut SystemWorldArgs) {
         (self.fptr)(args)
     }
 }
@@ -149,18 +146,22 @@ impl SystemsManager {
         Self::default()
     }
 
-    pub(crate) fn add_system<T>(&mut self, system: impl IntoSystem<T>) {
-        self.systems.push(system.parse().unwrap());
+    pub(crate) fn add_system<T>(
+        &mut self,
+        mut args: SystemWorldArgs,
+        system: impl IntoSystem<T>,
+    ) -> Result<(), SystemParamError> {
+        self.systems.push(system.parse(&mut args)?);
+        Ok(())
     }
 
-    pub(crate) fn run_all(&self, mut args: SystemWorldArgs) -> Result<(), SystemParamError> {
+    pub(crate) fn run_all(&self, mut args: SystemWorldArgs) {
         for system in &self.systems {
-            system.run(&mut args)?;
+            system.run(&mut args);
         }
 
         args.commands
             .apply(args.entity_manager, args.components_manager);
-        Ok(())
     }
 }
 

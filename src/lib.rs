@@ -21,7 +21,7 @@ pub struct World {
     commands: Commands,
 }
 
-pub(crate) struct SystemWorldArgs<'a> {
+pub struct SystemWorldArgs<'a> {
     pub(crate) components_manager: &'a mut component::ComponentManager,
     pub(crate) entity_manager: &'a mut entity::EntityManager,
     pub(crate) commands: &'a mut Commands,
@@ -70,18 +70,23 @@ impl World {
         self.entity_manager.despawn(entity);
     }
 
-    pub fn add_system<T>(&mut self, system: impl IntoSystem<T>) {
-        self.systems_manager.add_system(system);
-    }
-
-    pub fn run_all_systems(&mut self) -> Result<(), SystemParamError> {
+    pub fn add_system<T>(&mut self, system: impl IntoSystem<T>) -> Result<(), SystemParamError> {
         let args = SystemWorldArgs::new(
             &mut self.components_manager,
             &mut self.entity_manager,
             &mut self.commands,
         );
-        self.systems_manager.run_all(args)?;
+        self.systems_manager.add_system(args, system)?;
         Ok(())
+    }
+
+    pub fn run_all_systems(&mut self) {
+        let args = SystemWorldArgs::new(
+            &mut self.components_manager,
+            &mut self.entity_manager,
+            &mut self.commands,
+        );
+        self.systems_manager.run_all(args);
     }
 }
 
@@ -102,7 +107,7 @@ impl SystemParam for &mut Commands {
         &mut *((*args).commands as *mut Commands)
     }
 
-    fn safety_info(&self) -> Option<SafetyInfo> {
+    fn safety_info(_: &mut SystemWorldArgs) -> Option<SafetyInfo> {
         Some(SafetyInfo::Commands)
     }
 }
