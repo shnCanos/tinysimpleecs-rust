@@ -57,7 +57,10 @@ impl SafetyCheck {
     }
 
     pub(crate) fn check_commands(&mut self) -> Result<(), SystemParamError> {
-        assert!(!self.has_commands);
+        assert!(
+            !self.has_commands,
+            "A System can only have a single Commands argument!"
+        );
         self.has_commands = true;
         Ok(())
     }
