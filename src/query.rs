@@ -1,7 +1,5 @@
 use std::{collections::HashMap, marker::PhantomData};
 
-use tinysimpleecs_rust_macros::implement_query_bundle;
-
 use crate::{
     component::{ComponentId, ComponentManager},
     entity::{EntityBitmask, EntityId},
@@ -102,7 +100,7 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
         Self::new(result, info)
     }
 
-    fn query_info(&self) -> Option<SafetyInfo> {
+    fn safety_info(&self) -> Option<SafetyInfo> {
         Some(SafetyInfo::Query(&self.info))
     }
 }
@@ -119,4 +117,46 @@ pub trait QueryBundle {
     ) -> Self::ResultType<'a>;
 }
 
-variadics_please::all_tuples!(implement_query_bundle, 0, 15, B);
+macro_rules! impl_query_bundle {
+    ($(($n:tt, $Q:ident)),*) => {
+        impl<$($Q: crate::component::Component),*> QueryBundle for ($($Q,)*) {
+            type ResultType<'a> = ($(&'a mut $Q,)*);
+            #[allow(unused_assignments, unused_variables, unused_mut)]
+            fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder) {
+                let mut bitset = ::bit_set::BitSet::new();
+                let mut order = ::std::collections::HashMap::new();
+                let mut current_index = 0;
+
+                $(
+                    if let Some(id) = component_manager.get_component_id::<$Q>() {
+                        let had_inserted = bitset.insert(id);
+                        debug_assert!(had_inserted, "duplicate component type in query");
+
+                        order.insert(id, current_index);
+                        current_index += 1;
+                    }
+                    // else { do nothing, components are added dynamically }
+                )*
+
+                (bitset.into(), order)
+            }
+
+            #[allow(clippy::unused_unit)]
+            #[allow(unused_assignments, unused_variables, unused_mut, invalid_value)]
+            unsafe fn from_indexes<'a>(
+                order: &ComponentOrder,
+                indexes: &[usize],
+                component_manager: *mut ComponentManager,
+            ) -> Self::ResultType<'a> {
+                let mut newtuple: Self::ResultType<'a> = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+                $({
+                    let current_id = (*component_manager).get_component_id::<$Q>().unwrap();
+                    newtuple.$n = (*component_manager).get_from_index::<$Q>(indexes[order[&current_id]]).unwrap();
+                })*
+                newtuple
+            }
+        }
+    };
+}
+
+variadics_please::all_tuples_enumerated!(impl_query_bundle, 0, 15, B);

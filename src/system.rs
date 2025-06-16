@@ -78,7 +78,7 @@ impl SafetyCheck {
 
 pub(crate) trait SystemParam {
     unsafe fn init(args: *mut SystemWorldArgs) -> Self;
-    fn query_info<'a>(&'a self) -> Option<SafetyInfo<'a>>;
+    fn safety_info<'a>(&'a self) -> Option<SafetyInfo<'a>>;
 }
 
 pub(crate) trait IntoSystem<T> {
@@ -101,7 +101,7 @@ macro_rules! impl_into_system {
                     let mut safety_check = SafetyCheck::new();
                     self($({
                         let current = unsafe {$A::init(args)};
-                        if let Some(info) = current.query_info() {
+                        if let Some(info) = current.safety_info() {
                             safety_check.check::<$A>(info)?;
                         }
                         current

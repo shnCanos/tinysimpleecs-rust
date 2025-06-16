@@ -102,7 +102,7 @@ impl SystemParam for &mut Commands {
         &mut *((*args).commands as *mut Commands)
     }
 
-    fn query_info(&self) -> Option<SafetyInfo> {
+    fn safety_info(&self) -> Option<SafetyInfo> {
         Some(SafetyInfo::Commands)
     }
 }
