@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData};
+use std::{collections::HashMap, fmt, marker::PhantomData};
 
 use bit_set::BitSet;
 
@@ -9,9 +9,68 @@ use crate::{
     SystemWorldArgs, World,
 };
 
+pub(crate) enum SafetyInfo<'a> {
+    Commands,
+    Query(&'a QueryInfo),
+}
+
+#[derive(Default)]
+pub(crate) struct SafetyCheck {
+    /// This is a hashmap with a queried component as key and restrictions to its query as value
+    /// The usage is pretty simple:
+    /// If there's a component being queried two times, then it must have one of its components in
+    /// the restrictions
+    consumed_bitmasks: HashMap<ComponentId, EntityBitmask>,
+    /// There can be only one commands in each query
+    has_commands: bool,
+}
+
+impl SafetyCheck {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn check_query<P: SystemParam>(
+        &mut self,
+        info: &QueryInfo,
+    ) -> Result<(), SystemParamError> {
+        for component in info.query_bitmask.iter() {
+            if let Some(restriction) = self.consumed_bitmasks.get_mut(&component) {
+                if info.query_bitmask.union(restriction).next().is_none() {
+                    return Err(SystemParamError::new::<P>(
+                        component,
+                        SystemParamErrorType::MustRestrict,
+                    ));
+                }
+                restriction.difference_with(&info.query_bitmask);
+            } else {
+                self.consumed_bitmasks
+                    .insert(component, info.restrictions_bitmask.clone());
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_commands(&mut self) -> Result<(), SystemParamError> {
+        assert!(!self.has_commands);
+        self.has_commands = true;
+        Ok(())
+    }
+
+    pub(crate) fn check<P: SystemParam>(
+        &mut self,
+        info: SafetyInfo,
+    ) -> Result<(), SystemParamError> {
+        match info {
+            SafetyInfo::Commands => self.check_commands(),
+            SafetyInfo::Query(query_info) => self.check_query::<P>(query_info),
+        }
+    }
+}
+
 pub(crate) trait SystemParam {
     unsafe fn init(args: *mut SystemWorldArgs) -> Self;
-    fn query_info(&self) -> Option<&QueryInfo>;
+    fn query_info<'a>(&'a self) -> Option<SafetyInfo<'a>>;
 }
 
 pub(crate) trait IntoSystem<T> {
@@ -20,7 +79,7 @@ pub(crate) trait IntoSystem<T> {
 
 macro_rules! impl_into_system {
     ($($A:ident),*) => {
-        impl<F, $($A: SystemParam,)*> IntoSystem<($($A,)*)> for F
+        impl<'a, F, $($A: SystemParam,)*> IntoSystem<($($A,)*)> for F
         where
             F: Fn($($A,)*) + 'static
         {
@@ -31,23 +90,11 @@ macro_rules! impl_into_system {
                 //         in the restrictions of the others
 
                 Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| -> Result<(), SystemParamError> {
-                    let mut consumed_bitmask = BitSet::new();
+                    let mut safety_check = SafetyCheck::new();
                     self($({
                         let current = unsafe {$A::init(args)};
                         if let Some(info) = current.query_info() {
-                            if let Some(repeated) = info.query_bitmask.intersection(&consumed_bitmask).next() {
-                                return Err(SystemParamError::new::<$A>(
-                                    repeated,
-                                    SystemParamErrorType::RepeatedComponent
-                                ));
-                            }
-                            if let Some(difference) = info.restrictions_bitmask.difference(&consumed_bitmask).next() {
-                                return Err(SystemParamError::new::<$A>(
-                                    difference,
-                                    SystemParamErrorType::MustRestrict
-                                ))
-                            }
-                            consumed_bitmask.union_with(&info.query_bitmask);
+                            safety_check.check::<$A>(info)?;
                         }
                         current
                 },)*); Ok(())})))
@@ -98,13 +145,14 @@ impl SystemsManager {
         self.systems.push(system.parse().unwrap());
     }
 
-    pub(crate) fn run_all(&self, mut args: SystemWorldArgs) {
+    pub(crate) fn run_all(&self, mut args: SystemWorldArgs) -> Result<(), SystemParamError> {
         for system in &self.systems {
-            system.run(&mut args).unwrap();
+            system.run(&mut args)?;
         }
 
         args.commands
             .apply(args.entity_manager, args.components_manager);
+        Ok(())
     }
 }
 
@@ -136,6 +184,5 @@ impl SystemParamError {
 
 #[derive(Debug)]
 enum SystemParamErrorType {
-    RepeatedComponent,
     MustRestrict,
 }

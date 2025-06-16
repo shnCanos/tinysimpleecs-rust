@@ -1,8 +1,8 @@
 use std::alloc::System;
 
-use component::ComponentBundle;
-use entity::EntityId;
-use system::IntoSystem;
+use component::{ComponentBundle, ComponentManager};
+use entity::{EntityId, EntityManager};
+use system::{IntoSystem, SafetyInfo, SystemParam, SystemParamError};
 
 mod component;
 mod entity;
@@ -43,11 +43,23 @@ impl<'a> SystemWorldArgs<'a> {
             &mut world.commands,
         )
     }
+
+    pub(crate) fn apply_commands(&mut self) {
+        self.commands
+            .apply(self.entity_manager, self.components_manager);
+    }
 }
 
 impl World {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn spawn(&mut self, components: impl ComponentBundle + 'static) -> EntityId {
+        let id = self.commands.spawn(components);
+        self.commands
+            .apply(&mut self.entity_manager, &mut self.components_manager);
+        id
     }
 
     pub(crate) fn despawn(&mut self, entity: &entity::EntityId) {
@@ -58,22 +70,37 @@ impl World {
         self.systems_manager.add_system(system);
     }
 
-    pub(crate) fn run_all_systems(&mut self) {
+    pub(crate) fn run_all_systems(&mut self) -> Result<(), SystemParamError> {
         let args = SystemWorldArgs::new(
             &mut self.components_manager,
             &mut self.entity_manager,
             &mut self.commands,
         );
-        self.systems_manager.run_all(args);
+        self.systems_manager.run_all(args)?;
+        Ok(())
     }
 }
 
-type CommandAction = Vec<Box<dyn FnOnce(&mut SystemWorldArgs)>>;
+type CommandAction = Vec<Box<dyn FnOnce(&mut EntityManager, &mut ComponentManager)>>;
 
 #[derive(Default)]
 pub struct Commands {
     actions_queue: CommandAction,
     next_id: usize,
+}
+
+impl SystemParam for &mut Commands {
+    /// SAFETY: Only one commands per system
+    unsafe fn init(args: *mut SystemWorldArgs) -> Self {
+        // What... The hell am I doing.
+        // This is safe though, since args will always outlive
+        // this reference, so I guess it's fine
+        &mut *((*args).commands as *mut Commands)
+    }
+
+    fn query_info(&self) -> Option<SafetyInfo> {
+        Some(SafetyInfo::Commands)
+    }
 }
 
 impl Commands {
@@ -85,18 +112,29 @@ impl Commands {
 
     pub fn spawn(&mut self, tospawn: impl ComponentBundle + 'static) -> EntityId {
         let id = self.new_entity_id();
-        self.actions_queue
-            .push(Box::new(move |args: &mut SystemWorldArgs| {
-                args.entity_manager
-                    .spawn(id, tospawn, args.components_manager);
-            }));
-        return id;
+        self.actions_queue.push(Box::new(
+            move |entity_manager: &mut EntityManager, components_manager: &mut ComponentManager| {
+                entity_manager.spawn(id, tospawn, components_manager);
+            },
+        ));
+        id
     }
     pub fn despawn(&mut self, todespawn: EntityId) {
-        self.actions_queue
-            .push(Box::new(move |args: &mut SystemWorldArgs| {
-                args.entity_manager.despawn(&todespawn);
-            }));
+        self.actions_queue.push(Box::new(
+            move |entity_manager: &mut EntityManager, _: &mut ComponentManager| {
+                entity_manager.despawn(&todespawn);
+            },
+        ));
+    }
+
+    pub(crate) fn apply(
+        &mut self,
+        entity_manager: &mut EntityManager,
+        components_manager: &mut ComponentManager,
+    ) {
+        while let Some(action) = self.actions_queue.pop() {
+            action(entity_manager, components_manager);
+        }
     }
 }
 
@@ -222,20 +260,25 @@ mod tests {
         }
     }
 
-    fn print_me(mut query: Query<(Banana2,), ()>) {
-        for result in &mut query.results {
-            dbg!(&result.components);
-        }
-    }
-
     #[test]
     fn systems_test() {
+        fn print_me(
+            commands: &mut Commands,
+            query: Query<(Banana2,), ()>,
+            query2: Query<(Banana,), ()>,
+        ) {
+            commands.spawn((Banana,));
+            for result in &query2.results {
+                dbg!(&result.components);
+            }
+        }
         let mut world = World::new();
         let _ = world.spawn(((Banana {}),));
         let _ = world.spawn((Banana {}, Banana2(23)));
         let _ = world.spawn(((Banana2(24)),));
 
         world.add_system(print_me);
-        world.run_all_systems();
+        world.run_all_systems().unwrap();
+        world.run_all_systems().unwrap();
     }
 }

@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use bit_set::BitSet;
 
 use crate::component;
@@ -12,8 +14,14 @@ impl EntityId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EntityBitmask(pub(crate) BitSet);
+
+impl DerefMut for EntityBitmask {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl EntityBitmask {
     pub(crate) fn new(bitset: BitSet) -> Self {

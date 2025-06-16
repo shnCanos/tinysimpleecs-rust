@@ -5,7 +5,7 @@ use tinysimpleecs_rust_macros::implement_query_bundle;
 use crate::{
     component::{ComponentId, ComponentManager},
     entity::{EntityBitmask, EntityId},
-    system::SystemParam,
+    system::{SafetyInfo, SystemParam},
 };
 
 pub(crate) struct QueryInfo {
@@ -101,8 +101,8 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
         Self::new(result, info)
     }
 
-    fn query_info(&self) -> Option<&QueryInfo> {
-        Some(&self.info)
+    fn query_info(&self) -> Option<SafetyInfo> {
+        Some(SafetyInfo::Query(&self.info))
     }
 }
 
