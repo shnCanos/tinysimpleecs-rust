@@ -171,7 +171,7 @@ impl fmt::Debug for SystemParamError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error {:?} in query {} for component with ID {}",
+            "{:?} in query {} for component with ID {}",
             self.err, self.query_string, self.component
         )
     }
