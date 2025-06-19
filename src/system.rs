@@ -47,10 +47,7 @@ impl SafetyCheck {
                     .next()
                     .is_none()
                 {
-                    return Err(SystemParamError::new_query_error::<P>(
-                        component,
-                        SystemParamErrorType::MustRestrict,
-                    ));
+                    return Err(SystemParamError::new_query_error::<P>(component));
                 }
                 restriction.difference_with(&info.query_bitmask);
             } else {
@@ -205,22 +202,11 @@ impl Debug for SystemParamError {
     }
 }
 
-// pub struct SystemParamError {
-//     query_string: String,
-//     component: ComponentId,
-//     err: SystemParamErrorType,
-// }
-
 impl SystemParamError {
-    fn new_query_error<Query>(component_id: ComponentId, err: SystemParamErrorType) -> Self {
+    fn new_query_error<Query>(component_id: ComponentId) -> Self {
         Self::MustRestrictQuery {
             query_string: std::any::type_name::<Query>().into(),
             component_id,
         }
     }
-}
-
-#[derive(Debug)]
-enum SystemParamErrorType {
-    MustRestrict,
 }
