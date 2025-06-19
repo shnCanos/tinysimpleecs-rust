@@ -80,6 +80,18 @@ impl World {
         Ok(())
     }
 
+    /// # Safety
+    /// Funky things might happen if you call it, specifically multiple mutable references to the
+    /// same value. However, it might be good if the safety checks are too restraining
+    pub unsafe fn add_system_unchecked<T>(&mut self, system: impl IntoSystem<T>) {
+        let args = SystemWorldArgs::new(
+            &mut self.components_manager,
+            &mut self.entity_manager,
+            &mut self.commands,
+        );
+        self.systems_manager.add_system_unchecked(args, system);
+    }
+
     pub fn run_all_systems(&mut self) {
         let args = SystemWorldArgs::new(
             &mut self.components_manager,

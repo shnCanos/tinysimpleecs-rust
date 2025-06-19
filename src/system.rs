@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fmt, marker::PhantomData};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt::{self, write, Debug, Display},
+    marker::PhantomData,
+};
 
 use bit_set::BitSet;
 
@@ -42,7 +47,7 @@ impl SafetyCheck {
                     .next()
                     .is_none()
                 {
-                    return Err(SystemParamError::new::<P>(
+                    return Err(SystemParamError::new_query_error::<P>(
                         component,
                         SystemParamErrorType::MustRestrict,
                     ));
@@ -57,10 +62,9 @@ impl SafetyCheck {
     }
 
     pub(crate) fn check_commands(&mut self) -> Result<(), SystemParamError> {
-        assert!(
-            !self.has_commands,
-            "A System can only have a single Commands argument!"
-        );
+        if self.has_commands {
+            return Err(SystemParamError::DuplicateCommands);
+        }
         self.has_commands = true;
         Ok(())
     }
@@ -83,6 +87,9 @@ pub(crate) trait SystemParam {
 
 pub trait IntoSystem<T> {
     fn parse(self, args: &mut SystemWorldArgs) -> Result<Box<dyn System>, SystemParamError>;
+    /// SAFETY: Calling this function from outside `IntoSystem::parse` might lead to multiple
+    /// mutable references to the same value.
+    unsafe fn parse_unchecked(self, args: &mut SystemWorldArgs) -> Box<dyn System>;
 }
 
 macro_rules! impl_into_system {
@@ -98,13 +105,16 @@ macro_rules! impl_into_system {
                         safety_check.check::<$A>(info)?;
                     }
                 )*
-
                 // SAFETY:
                 //     - No two queries may query the same component
                 //     - A component queried by a certain query must be
                 //         in the restrictions of the others
                 //     - No two mutable references to Commands may coexist
-                Ok(Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| self($(unsafe {$A::init(args)},)*))))
+                Ok(unsafe {self.parse_unchecked(args)})
+            }
+
+            unsafe fn parse_unchecked(self, args: &mut SystemWorldArgs) -> Box<dyn System> {
+                Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| self($(unsafe {$A::init(args)},)*)))
             }
         }
     };
@@ -155,6 +165,14 @@ impl SystemsManager {
         Ok(())
     }
 
+    pub(crate) unsafe fn add_system_unchecked<T>(
+        &mut self,
+        mut args: SystemWorldArgs,
+        system: impl IntoSystem<T>,
+    ) {
+        self.systems.push(system.parse_unchecked(&mut args));
+    }
+
     pub(crate) fn run_all(&self, mut args: SystemWorldArgs) {
         for system in &self.systems {
             system.run(&mut args);
@@ -165,28 +183,39 @@ impl SystemsManager {
     }
 }
 
-pub struct SystemParamError {
-    query_string: String,
-    component: ComponentId,
-    err: SystemParamErrorType,
+pub enum SystemParamError {
+    DuplicateCommands,
+    MustRestrictQuery {
+        query_string: String,
+        component_id: ComponentId,
+    },
 }
 
-impl fmt::Debug for SystemParamError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{:?} in query {} for component with ID {}",
-            self.err, self.query_string, self.component
-        )
+impl Debug for SystemParamError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateCommands => write!(f, "DuplicateCommands"),
+            Self::MustRestrictQuery {
+                query_string,
+                component_id,
+            } => f.write_fmt(format_args!(
+                "MustRestrict Error for query {query_string} in component with ID {component_id}",
+            )),
+        }
     }
 }
 
+// pub struct SystemParamError {
+//     query_string: String,
+//     component: ComponentId,
+//     err: SystemParamErrorType,
+// }
+
 impl SystemParamError {
-    fn new<Query>(component: ComponentId, err: SystemParamErrorType) -> Self {
-        Self {
+    fn new_query_error<Query>(component_id: ComponentId, err: SystemParamErrorType) -> Self {
+        Self::MustRestrictQuery {
             query_string: std::any::type_name::<Query>().into(),
-            component,
-            err,
+            component_id,
         }
     }
 }
