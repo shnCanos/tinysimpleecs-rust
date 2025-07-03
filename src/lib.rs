@@ -219,73 +219,87 @@ mod tests {
         let _ = world.spawn((Banana {}, Banana {}));
     }
 
-    #[test]
-    fn query_entities() {
+    fn assert_within_query<V: QueryBundle, R: QueryBundle>(query: &Query<V, R>, id: usize) {
+        assert!(query.results.iter().any(|r| r.entity == EntityId::new(id)));
+    }
+
+    macro_rules! assert_banana2_values {
+        ($query:tt, $bananai:tt, [$($value:tt),+]) => {
+            {
+                let mut values: Vec<usize> = vec![$($value),+];
+                assert_eq!($query.results.len(), values.len(), "values' ({:?}) len ({}) does not match result's ({:?}) len ({})", values, values.len(), $query.results, $query.results.len());
+                for r in $query.results.iter() {
+                    let index = values.iter().position(|n| *n == r.components.$bananai.0);
+                    assert!(index.is_some(), "value: {:?} from {:?} not found in values: {:?}", r.components.$bananai.0, r, values);
+                    values.remove(index.unwrap());
+                }
+            }
+        }
+    }
+
+    fn dummy_world() -> World {
         let mut world = World::new();
         let _ = world.spawn(((Banana {}),));
         let _ = world.spawn((Banana {}, Banana2(23)));
         let _ = world.spawn(((Banana2(24)),));
+        world
+    }
 
-        // SAFETY: no two queries are alive at the same time, therefore it's safe
+    #[test]
+    fn test_query_banana() {
+        let mut world = dummy_world();
+        let query: Query<(Banana,), ()> =
+            unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
+        assert_within_query(&query, 0);
+        assert_within_query(&query, 1);
+        assert_eq!(query.results.len(), 2);
+    }
 
-        fn assert_within_query<V: QueryBundle, R: QueryBundle>(query: &Query<V, R>, id: usize) {
-            assert!(query.results.iter().any(|r| r.entity == EntityId::new(id)));
-        }
+    #[test]
+    fn test_query_banana2_and_modify() {
+        let mut world = dummy_world();
+        let query: Query<(Banana2,), ()> =
+            unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
+        assert_eq!(query.results.len(), 2);
+        assert_within_query(&query, 1);
+        assert_within_query(&query, 2);
+        assert_banana2_values!(query, 0, [24, 23]);
+        query.results[1].components.0.0 += 1;
+    }
 
-        macro_rules! assert_banana2_values {
-            ($query:tt, $bananai:tt, [$($value:tt),+]) => {
-                {
-                    let mut values: Vec<usize> = vec![$($value),+];
-                    assert!($query.results.len() == values.len(), "values' ({:?}) len ({}) does not match result's ({:?}) len ({})", values, values.len(), $query.results, $query.results.len());
-                    for r in $query.results.iter() {
-                        let index = values.iter().position(|n| *n == r.components.$bananai.0);
-                        assert!(index.is_some(), "value: {:?} from {:?} not found in values: {:?}", r.components.$bananai.0, r, values);
-                        values.remove(index.unwrap());
-                    }
-                };
-            }
-        }
+    #[test]
+    fn test_query_banana_and_banana2() {
+        let mut world = dummy_world();
+        let query: Query<(Banana, Banana2), ()> =
+            unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
+        assert_eq!(query.results.len(), 1);
+        assert_within_query(&query, 1);
+    }
 
-        {
-            let query: Query<(Banana,), ()> =
-                unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
-            assert_within_query(&query, 0);
-            assert_within_query(&query, 1);
-            assert_eq!(query.results.len(), 2);
-        }
+    #[test]
+    fn test_query_banana_without_banana2() {
+        let mut world = dummy_world();
+        let query: Query<(Banana,), (Banana2,)> =
+            unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
+        assert_eq!(query.results.len(), 1);
+        assert_within_query(&query, 0);
+    }
+
+    #[test]
+    fn test_query_banana2_after_modification() {
+        let mut world = dummy_world();
 
         {
             let query: Query<(Banana2,), ()> =
                 unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
-            assert_eq!(query.results.len(), 2);
-            assert_within_query(&query, 1);
-            assert_within_query(&query, 2);
-            assert_banana2_values!(query, 0, [24, 23]);
             query.results[1].components.0.0 += 1;
         }
 
-        {
-            let query: Query<(Banana, Banana2), ()> =
-                unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
-            assert_eq!(query.results.len(), 1);
-            assert_within_query(&query, 1);
-        }
-
-        {
-            let query: Query<(Banana,), (Banana2,)> =
-                unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
-            assert_eq!(query.results.len(), 1);
-            assert_within_query(&query, 0);
-        }
-
-        {
-            // Re-run the query to check new state
-            let query: Query<(Banana2,), ()> =
-                unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
-            assert_within_query(&query, 1);
-            assert_within_query(&query, 2);
-            assert_banana2_values!(query, 0, [23, 25]);
-        }
+        let query: Query<(Banana2,), ()> =
+            unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
+        assert_within_query(&query, 1);
+        assert_within_query(&query, 2);
+        assert_banana2_values!(query, 0, [23, 25]);
     }
 
     #[test]
@@ -300,10 +314,7 @@ mod tests {
                 dbg!(&result.components);
             }
         }
-        let mut world = World::new();
-        let _ = world.spawn(((Banana {}),));
-        let _ = world.spawn((Banana {}, Banana2(23)));
-        let _ = world.spawn(((Banana2(24)),));
+        let mut world = dummy_world();
 
         world.add_system(print_me).unwrap();
         world.run_all_systems();
