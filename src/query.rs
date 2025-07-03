@@ -173,12 +173,9 @@ macro_rules! impl_query_bundle {
                 archetype_order: &ComponentOrder,
                 columns: *mut ComponentColumns,
             ) -> Self::ResultType<'a> {
-                // SAFETY: All fields are initialized in the lines below
-                let mut newtuple: Self::ResultType<'a> = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-                $({
-                    newtuple.$n = (*columns).get_mut_from_column::<$Q>(archetype_order[$n], index).unwrap();
-                })*
-                newtuple
+                ($(
+                    (*columns).get_mut_from_column::<$Q>(archetype_order[$n], index).unwrap()
+                ,)*)
             }
         }
     };
