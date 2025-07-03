@@ -145,9 +145,25 @@ impl EntityManager {
             .any(|a| a.entities.iter().any(|e| e == entity_id))
     }
 
-    // TODO: Implement this
-    #[allow(unused_variables)]
-    pub(crate) fn despawn(&mut self, entity_id: &EntityId) {}
+    // TODO: Change this to something more sane
+    pub(crate) fn despawn(&mut self, entity_id: &EntityId) {
+        let (archetype, entity_index) = self
+            .archetypes
+            .values_mut()
+            .find_map(|archetype| {
+                archetype
+                    .entities
+                    .iter()
+                    .position(|current_entity| current_entity == entity_id)
+                    .map(|entity_index| (archetype, entity_index))
+            })
+            .expect("Attempted to despawn non-existent entity!");
+
+        archetype.entities.swap_remove(entity_index);
+        for component_list in archetype.component_columns.iter_mut() {
+            component_list.swap_remove(entity_index);
+        }
+    }
 
     pub(crate) fn query(
         &mut self,

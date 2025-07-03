@@ -231,7 +231,7 @@ mod tests {
                 for r in $query.results.iter() {
                     let index = values.iter().position(|n| *n == r.components.$bananai.0);
                     assert!(index.is_some(), "value: {:?} from {:?} not found in values: {:?}", r.components.$bananai.0, r, values);
-                    values.remove(index.unwrap());
+                    values.swap_remove(index.unwrap());
                 }
             }
         }
