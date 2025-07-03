@@ -1,13 +1,14 @@
 use tinysimpleecs_rust::{Commands, Component, Query, World};
 
+#[allow(dead_code)]
 #[derive(Debug, Component)]
 struct MyComponent(String);
 
-fn duplicatecommandssystem(commands: &mut Commands, othercommands: &mut Commands) {
+fn duplicatecommandssystem(_commands: &mut Commands, _othercommands: &mut Commands) {
     println!("Two mutable references to commands but running anyway!");
 }
 
-fn mustrestrictsystem(query: Query<(MyComponent,), ()>, query2: Query<(MyComponent,), ()>) {
+fn mustrestrictsystem(_query: Query<(MyComponent,), ()>, _query2: Query<(MyComponent,), ()>) {
     println!("Two Repeated Queries but running anyway!")
 }
 

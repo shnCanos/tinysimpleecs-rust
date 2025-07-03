@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::ops::DerefMut;
@@ -53,7 +52,7 @@ impl std::ops::Deref for EntityBitmask {
 }
 
 #[derive(Debug)]
-pub(crate) struct ComponentColumns(Box<[AnyVec]>);
+pub struct ComponentColumns(Box<[AnyVec]>);
 
 impl ComponentColumns {
     fn new(columns: Box<[AnyVec]>) -> Self {
@@ -100,10 +99,8 @@ impl Archetype {
     }
 }
 
-type ComponentId = usize;
-
 #[derive(Default, Debug)]
-pub(crate) struct EntityManager {
+pub struct EntityManager {
     pub(crate) archetypes: HashMap<EntityBitmask, Archetype>,
 }
 
@@ -139,21 +136,17 @@ impl EntityManager {
             inserter(column);
         }
     }
-    pub(crate) fn get_archetype(&self, bitmask: &EntityBitmask) {
-        self.archetypes.get(bitmask);
-    }
-
-    pub(crate) fn get_archetype_mut(&mut self, bitmask: &EntityBitmask) {
-        self.archetypes.get_mut(bitmask);
-    }
 
     // TODO: Change this to something more sane
+    #[cfg(test)]
     pub(crate) fn entity_exists(&self, entity_id: &EntityId) -> bool {
         self.archetypes
             .values()
             .any(|a| a.entities.iter().any(|e| e == entity_id))
     }
 
+    // TODO: Implement this
+    #[allow(unused_variables)]
     pub(crate) fn despawn(&mut self, entity_id: &EntityId) {}
 
     pub(crate) fn query(

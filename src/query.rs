@@ -1,11 +1,8 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    marker::PhantomData,
-};
+use std::marker::PhantomData;
 
 use crate::{
-    EntityManager, SystemWorldArgs,
-    component::{ComponentId, ComponentManager},
+    SystemWorldArgs,
+    component::ComponentManager,
     entity::{ComponentColumns, EntityBitmask, EntityId},
     system::{SafetyInfo, SystemParam},
 };
@@ -16,13 +13,6 @@ pub(crate) struct QueryInfo {
 }
 
 impl QueryInfo {
-    pub(crate) fn new(query_bitmask: EntityBitmask, restrictions_bitmask: EntityBitmask) -> Self {
-        Self {
-            query_bitmask,
-            restrictions_bitmask,
-        }
-    }
-
     pub(crate) fn from_query<V: QueryBundle, R: QueryBundle>(
         components_manager: &mut ComponentManager,
     ) -> Self {
@@ -58,15 +48,13 @@ impl<ResultType> From<(EntityId, ResultType)> for QueryResult<ResultType> {
 
 pub struct Query<'a, Values: QueryBundle, Restrictions: QueryBundle> {
     pub results: Box<[QueryResult<Values::ResultType<'a>>]>,
-    pub(crate) info: QueryInfo,
     _restrictions: PhantomData<Restrictions>,
 }
 
 impl<'a, Values: QueryBundle, Restrictions: QueryBundle> Query<'a, Values, Restrictions> {
-    fn new(results: Box<[QueryResult<Values::ResultType<'a>>]>, info: QueryInfo) -> Self {
+    fn new(results: Box<[QueryResult<Values::ResultType<'a>>]>) -> Self {
         Self {
             results,
-            info,
             _restrictions: PhantomData,
         }
     }
@@ -78,34 +66,39 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
     /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.
     unsafe fn init(args: *mut crate::SystemWorldArgs) -> Self {
         let info: QueryInfo =
-            QueryInfo::from_query::<Values, Restrictions>((*args).components_manager);
+            QueryInfo::from_query::<Values, Restrictions>(unsafe { (*args).components_manager });
         // NOTE: The results are ordered by component_id
-        let archetypes = (*args)
-            .entity_manager
-            .query(&info.query_bitmask, &info.restrictions_bitmask);
+        let archetypes = unsafe {
+            (*args)
+                .entity_manager
+                .query(&info.query_bitmask, &info.restrictions_bitmask)
+        };
 
         let result = archetypes
             .into_vec()
             .into_iter()
             .flat_map(|(bitmask, archetype)| {
-                let archetype_order = Values::into_order((*args).components_manager, bitmask);
+                let archetype_order =
+                    Values::into_order(unsafe { (*args).components_manager }, bitmask);
                 archetype
                     .entities
                     .iter()
                     .enumerate()
                     .map(|(i, &entity)| QueryResult {
                         entity,
-                        components: Values::from_columns(
-                            i,
-                            &archetype_order,
-                            &mut archetype.component_columns as *mut ComponentColumns,
-                        ),
+                        components: unsafe {
+                            Values::from_columns(
+                                i,
+                                &archetype_order,
+                                &mut archetype.component_columns as *mut ComponentColumns,
+                            )
+                        },
                     })
                     .collect::<Vec<_>>()
             })
             .collect();
 
-        Self::new(result, info)
+        Self::new(result)
     }
 
     fn safety_info(args: &mut SystemWorldArgs) -> Option<SafetyInfo> {
@@ -150,6 +143,7 @@ macro_rules! impl_query_bundle {
                 bitset.into()
             }
 
+            #[allow(unused_variables, unused_mut)]
             fn into_order(component_manager: &ComponentManager, other_bitmask: &EntityBitmask) -> ComponentOrder {
                 // TODO: use corret size instead of vector
                 let mut order = Vec::new();
@@ -174,7 +168,7 @@ macro_rules! impl_query_bundle {
                 columns: *mut ComponentColumns,
             ) -> Self::ResultType<'a> {
                 ($(
-                    (*columns).get_mut_from_column::<$Q>(archetype_order[$n], index).unwrap()
+                    unsafe { (*columns).get_mut_from_column::<$Q>(archetype_order[$n], index).unwrap() }
                 ,)*)
             }
         }

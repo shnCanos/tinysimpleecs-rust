@@ -1,18 +1,9 @@
 use std::{
     collections::HashMap,
-    error::Error,
-    fmt::{self, write, Debug, Display},
-    marker::PhantomData,
+    fmt::{self, Debug},
 };
 
-use bit_set::BitSet;
-
-use crate::{
-    component::ComponentId,
-    entity::{EntityBitmask, EntityManager},
-    query::QueryInfo,
-    SystemWorldArgs, World,
-};
+use crate::{SystemWorldArgs, component::ComponentId, entity::EntityBitmask, query::QueryInfo};
 
 pub(crate) enum SafetyInfo {
     Commands,
@@ -86,7 +77,7 @@ pub trait IntoSystem<T> {
     fn parse(self, args: &mut SystemWorldArgs) -> Result<Box<dyn System>, SystemParamError>;
     /// SAFETY: Calling this function from outside `IntoSystem::parse` might lead to multiple
     /// mutable references to the same value.
-    unsafe fn parse_unchecked(self, args: &mut SystemWorldArgs) -> Box<dyn System>;
+    unsafe fn parse_unchecked(self) -> Box<dyn System>;
 }
 
 macro_rules! impl_into_system {
@@ -95,6 +86,7 @@ macro_rules! impl_into_system {
         where
             F: Fn($($A,)*) + 'static
         {
+            #[allow(unused_variables, unused_mut)]
             fn parse(self, args: &mut SystemWorldArgs) -> Result<Box<dyn System>, SystemParamError> {
                 let mut safety_check = SafetyCheck::new();
                 $(
@@ -107,10 +99,11 @@ macro_rules! impl_into_system {
                 //     - A component queried by a certain query must be
                 //         in the restrictions of the others
                 //     - No two mutable references to Commands may coexist
-                Ok(unsafe {self.parse_unchecked(args)})
+                Ok(unsafe {self.parse_unchecked()})
             }
 
-            unsafe fn parse_unchecked(self, args: &mut SystemWorldArgs) -> Box<dyn System> {
+            #[allow(unused_variables)]
+            unsafe fn parse_unchecked(self) -> Box<dyn System> {
                 Box::new(SystemWrapper::new(move |args: &mut SystemWorldArgs| self($(unsafe {$A::init(args)},)*)))
             }
         }
@@ -118,10 +111,6 @@ macro_rules! impl_into_system {
 }
 
 variadics_please::all_tuples!(impl_into_system, 0, 15, A);
-
-enum EcsSystemError {
-    Param(SystemParamError),
-}
 
 pub trait System: 'static {
     fn run(&self, args: &mut SystemWorldArgs);
@@ -149,10 +138,6 @@ pub(crate) struct SystemsManager {
 }
 
 impl SystemsManager {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
     pub(crate) fn add_system<T>(
         &mut self,
         mut args: SystemWorldArgs,
@@ -162,12 +147,8 @@ impl SystemsManager {
         Ok(())
     }
 
-    pub(crate) unsafe fn add_system_unchecked<T>(
-        &mut self,
-        mut args: SystemWorldArgs,
-        system: impl IntoSystem<T>,
-    ) {
-        self.systems.push(system.parse_unchecked(&mut args));
+    pub(crate) unsafe fn add_system_unchecked<T>(&mut self, system: impl IntoSystem<T>) {
+        unsafe { self.systems.push(system.parse_unchecked()) };
     }
 
     pub(crate) fn run_all(&self, mut args: SystemWorldArgs) {

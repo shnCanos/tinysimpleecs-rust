@@ -1,5 +1,6 @@
 use tinysimpleecs_rust::{Commands, Component, Query, World};
 
+#[allow(dead_code)]
 #[derive(Debug, Component)]
 struct MyComponent(String);
 
@@ -17,7 +18,9 @@ fn main() {
     let mut world = World::new();
     world.add_system(hello_there).unwrap();
 
-    println!("- In the first print, nothing should appear since the commands have yet to be applied.\n- However, in the second print, the two entities that we spawned should appear");
+    println!(
+        "- In the first print, nothing should appear since the commands have yet to be applied.\n- However, in the second print, the two entities that we spawned should appear"
+    );
     world.run_all_systems();
     world.run_all_systems();
 }

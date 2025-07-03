@@ -1,5 +1,3 @@
-use std::alloc::System;
-
 use component::{ComponentBundle, ComponentManager};
 use entity::{EntityId, EntityManager};
 use system::{IntoSystem, SafetyInfo, SystemParam, SystemParamError};
@@ -40,17 +38,13 @@ impl<'a> SystemWorldArgs<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn from_world(world: &'a mut World) -> Self {
         Self::new(
             &mut world.components_manager,
             &mut world.entity_manager,
             &mut world.commands,
         )
-    }
-
-    pub(crate) fn apply_commands(&mut self) {
-        self.commands
-            .apply(self.entity_manager, self.components_manager);
     }
 }
 
@@ -59,6 +53,7 @@ impl World {
         Self::default()
     }
 
+    #[cfg(test)]
     pub(crate) fn spawn(&mut self, components: impl ComponentBundle + 'static) -> EntityId {
         let id = self.commands.spawn(components);
         self.commands
@@ -66,9 +61,10 @@ impl World {
         id
     }
 
-    pub(crate) fn despawn(&mut self, entity: &entity::EntityId) {
-        self.entity_manager.despawn(entity);
-    }
+    // #[cfg(test)]
+    // pub(crate) fn despawn(&mut self, entity: &entity::EntityId) {
+    //     self.entity_manager.despawn(entity);
+    // }
 
     pub fn add_system<T>(&mut self, system: impl IntoSystem<T>) -> Result<(), SystemParamError> {
         let args = SystemWorldArgs::new(
@@ -84,12 +80,7 @@ impl World {
     /// Funky things might happen if you call it, specifically multiple mutable references to the
     /// same value. However, it might be good if the safety checks are too restraining
     pub unsafe fn add_system_unchecked<T>(&mut self, system: impl IntoSystem<T>) {
-        let args = SystemWorldArgs::new(
-            &mut self.components_manager,
-            &mut self.entity_manager,
-            &mut self.commands,
-        );
-        self.systems_manager.add_system_unchecked(args, system);
+        unsafe { self.systems_manager.add_system_unchecked(system) };
     }
 
     pub fn run_all_systems(&mut self) {
@@ -116,7 +107,7 @@ impl SystemParam for &mut Commands {
         // What... The hell am I doing.
         // This is safe though, since args will always outlive
         // this reference, so I guess it's fine
-        &mut *((*args).commands as *mut Commands)
+        unsafe { &mut *((*args).commands as *mut Commands) }
     }
 
     fn safety_info(_: &mut SystemWorldArgs) -> Option<SafetyInfo> {
@@ -161,14 +152,11 @@ impl Commands {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use crate::query::{Query, QueryBundle};
     use crate::system::SystemParam;
 
     use super::component::*;
     use super::*;
-    use bit_set::BitSet;
     use tinysimpleecs_rust_macros::Component;
 
     #[derive(Component, Debug)]
@@ -304,7 +292,7 @@ mod tests {
     fn systems_test() {
         fn print_me(
             commands: &mut Commands,
-            query: Query<(Banana2,), ()>,
+            _query: Query<(Banana2,), ()>,
             query2: Query<(Banana,), ()>,
         ) {
             commands.spawn((Banana,));

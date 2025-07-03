@@ -1,8 +1,6 @@
 use std::{
     any::TypeId,
     collections::{BTreeMap, HashMap},
-    mem::MaybeUninit,
-    ops::{Deref, DerefMut},
 };
 
 use any_vec::{AnyVec, any_value::AnyValueWrapper};
@@ -19,9 +17,9 @@ pub struct ComponentManager {
 }
 
 impl ComponentManager {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
+    // pub(crate) fn new() -> Self {
+    //     Self::default()
+    // }
 
     fn get_new_id(&mut self) -> usize {
         let id = self.last_used_id;
@@ -45,6 +43,7 @@ impl ComponentManager {
             .unwrap_or_else(|| self.register_component_unchecked::<C>())
     }
 
+    #[cfg(test)]
     pub(crate) fn component_exists<C: Component>(&self) -> bool {
         self.components.contains_key(&TypeId::of::<C>())
     }
@@ -67,6 +66,7 @@ macro_rules! replace_expr {
 macro_rules! impl_component_bundle {
     ($(($n:tt, $B:ident)),*) => {
         impl<$($B: Component),*> ComponentBundle for ($($B,)*) {
+            #[allow(unused_variables, unused_mut)]
             fn spawn(
                 self,
                 id: EntityId,
