@@ -14,36 +14,43 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
     component_impl.into()
 }
 
-#[proc_macro]
-pub fn implement_component_bundle(item: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
-    let len = input.len();
-    let values: Vec<_> = input.into_iter().collect();
-    let add_implementations = values.iter().enumerate().map(|(i, value)| {
-        let idx = syn::Index::from(i);
-        quote! {
-            let (id, component_index) = manager.add_component::<#value>(entity, self.#idx);
-
-            component_indexes[current_index].write(component_index);
-            current_index += 1;
-
-            let had_inserted = bitset.insert(id);
-            debug_assert!(had_inserted, "duplicate component type in entity");
-        }
-    });
-
-    quote! {
-        impl<#(#values: crate::component::Component),*> crate::component::ComponentBundle for (#(#values,)*) {
-            fn add(self, entity: crate::entity::EntityId, manager: &mut ComponentManager) -> crate::entity::EntityInfo {
-                let mut bitset = ::bit_set::BitSet::new();
-
-                let mut component_indexes = ::std::boxed::Box::<[usize]>::new_uninit_slice(#len);
-                let mut current_index = 0;
-
-                #(#add_implementations)*
-
-                crate::entity::EntityInfo::new(entity, bitset.into(), unsafe {component_indexes.assume_init()})
-            }
-        }
-    }.into()
-}
+// #[proc_macro]
+// pub fn implement_component_bundle(item: TokenStream) -> TokenStream {
+//     let input = syn::parse_macro_input!(item with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated);
+//     let len = input.len();
+//     let values: Vec<_> = input.into_iter().collect();
+//     let n: Vec<_> = values
+//         .iter()
+//         .enumerate()
+//         .map(|(i, _)| syn::Index::from(i))
+//         .collect();
+//
+//     quote! {
+//         impl<#(#values: Component),*> ComponentBundle for (#(#values,)*) {
+//             fn apply(self, id: EntityId, entity_manager: &mut EntityManager, component_manager: &mut ComponentManager) {
+//                 let bitmask = EntityBitmask::default();
+//                 let components_btree = BTreeMap::<usize, usize>::new();
+//                 #({
+//                     let id = component_manager.register_component_if_not_exists::<#values>();
+//                     let previous = components_btree.insert(id, #n);
+//                     debug_assert!(previous.is_none());
+//
+//                     bitmask.insert(id);
+//                 })*
+//
+//                 let components_order: HashMap<usize, usize> = components_btree.into_iter().enumerate().map(|(i, (k, v))| (v, i)).collect();
+//
+//                 let default_columns: [fn() -> AnyVec; #len];
+//                 let inserters: [Box<dyn Fn(&mut AnyVec)>; #len];
+//                 #({
+//                     let current_index = components_order[#n];
+//                     default_columns[current_index] = || AnyVec::new::<#values>();
+//                     inserters[current_index] = Box::new(|v: &mut AnyVec| v.push(AnyValueWrapper::new(self.#n)));
+//                 })*
+//
+//                 entity_manager.add_entity(id, bitmask, &default_columns, &inserters);
+//             }
+//         }
+//     }
+//     .into()
+// }

@@ -1,9 +1,14 @@
+use std::any::TypeId;
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::ops::DerefMut;
 
+use any_vec::AnyVec;
 use bit_set::BitSet;
 
-use crate::component;
+use crate::Component;
 use crate::ComponentBundle;
+use crate::component;
 
 #[derive(Hash, Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct EntityId(usize);
@@ -14,7 +19,7 @@ impl EntityId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct EntityBitmask(pub(crate) BitSet);
 
 impl DerefMut for EntityBitmask {
@@ -26,6 +31,10 @@ impl DerefMut for EntityBitmask {
 impl EntityBitmask {
     pub(crate) fn new(bitset: BitSet) -> Self {
         Self(bitset)
+    }
+
+    pub(crate) fn matches_query(&self, query: &Self, restrictions: &Self) -> bool {
+        query.is_subset(self) && restrictions.is_disjoint(self)
     }
 }
 
@@ -44,62 +53,58 @@ impl std::ops::Deref for EntityBitmask {
 }
 
 #[derive(Debug)]
-pub struct EntityInfo {
-    pub(crate) id: EntityId,
-    pub(crate) bitmask: EntityBitmask,
-    pub(crate) component_indexes: Box<[usize]>,
+pub(crate) struct ComponentColumns(Box<[AnyVec]>);
+
+impl ComponentColumns {
+    fn new(columns: Box<[AnyVec]>) -> Self {
+        Self(columns)
+    }
+
+    pub(crate) fn get_mut_from_column<C: Component>(
+        &mut self,
+        column: usize,
+        index: usize,
+    ) -> Option<&mut C> {
+        self[column]
+            .get_mut(index)
+            .and_then(|mut val| val.downcast_mut::<C>())
+    }
 }
 
-impl EntityInfo {
-    pub(crate) fn new(
-        id: EntityId,
-        bitmask: EntityBitmask,
-        component_indexes: Box<[usize]>,
-    ) -> Self {
+impl Deref for ComponentColumns {
+    type Target = Box<[AnyVec]>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ComponentColumns {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Archetype {
+    pub(crate) entities: Vec<EntityId>,
+    pub(crate) component_columns: ComponentColumns,
+}
+
+impl Archetype {
+    pub(crate) fn new(component_columns: Box<[AnyVec]>) -> Self {
         Self {
-            id,
-            bitmask,
-            component_indexes,
+            entities: Vec::default(),
+            component_columns: ComponentColumns::new(component_columns),
         }
     }
-
-    pub(crate) fn from_bundle(
-        id: EntityId,
-        components: impl ComponentBundle,
-        components_manager: &mut component::ComponentManager,
-    ) -> Self {
-        components.add(id, components_manager)
-    }
-
-    pub(crate) fn is_valid_for_query(
-        &self,
-        query_bitmask: &EntityBitmask,
-        restrictions_bitmask: &EntityBitmask,
-    ) -> bool {
-        self.bitmask.is_superset(query_bitmask) && self.bitmask.is_disjoint(restrictions_bitmask)
-    }
-
-    pub(crate) fn component_indexes_from_bitmask(
-        &self,
-        query_bitmask: &EntityBitmask,
-    ) -> Box<[usize]> {
-        self.bitmask
-            .iter()
-            .enumerate()
-            .filter_map(|(i, id)| {
-                if query_bitmask.contains(id) {
-                    Some(self.component_indexes[i])
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
 }
+
+type ComponentId = usize;
 
 #[derive(Default, Debug)]
 pub(crate) struct EntityManager {
-    pub(crate) entities: Vec<EntityInfo>,
+    pub(crate) archetypes: HashMap<EntityBitmask, Archetype>,
 }
 
 impl EntityManager {
@@ -108,50 +113,59 @@ impl EntityManager {
         new_entity_id: EntityId,
         components: impl ComponentBundle,
         components_manager: &mut component::ComponentManager,
-    ) -> EntityId {
-        let new_entity = EntityInfo::from_bundle(new_entity_id, components, components_manager);
-        self.entities.push(new_entity);
-        new_entity_id
+    ) {
+        components.spawn(new_entity_id, self, components_manager);
     }
 
-    /// Not to be confused with entity_id
-    pub(crate) fn get_entity_index(&self, entity_id: &EntityId) -> Option<usize> {
-        self.entities
-            .iter()
-            .position(|entity_info| entity_info.id == *entity_id)
+    pub(crate) fn add_entity(
+        &mut self,
+        id: EntityId,
+        bitmask: EntityBitmask,
+        default_columns: Box<[fn() -> AnyVec]>,
+        inserters: Box<[Box<dyn FnOnce(&mut AnyVec)>]>,
+    ) {
+        let archetype = self
+            .archetypes
+            .entry(bitmask)
+            .or_insert_with(|| Archetype::new(default_columns.iter().map(|f| f()).collect()));
+
+        archetype.entities.push(id);
+
+        for (column, inserter) in archetype
+            .component_columns
+            .iter_mut()
+            .zip(inserters.into_iter())
+        {
+            inserter(column);
+        }
+    }
+    pub(crate) fn get_archetype(&self, bitmask: &EntityBitmask) {
+        self.archetypes.get(bitmask);
     }
 
-    pub(crate) fn get_entity_info(&self, entity_id: &EntityId) -> Option<&EntityInfo> {
-        self.entities
-            .iter()
-            .find(|entity_info| entity_info.id == *entity_id)
+    pub(crate) fn get_archetype_mut(&mut self, bitmask: &EntityBitmask) {
+        self.archetypes.get_mut(bitmask);
     }
 
+    // TODO: Change this to something more sane
     pub(crate) fn entity_exists(&self, entity_id: &EntityId) -> bool {
-        self.get_entity_index(entity_id).is_some()
+        self.archetypes
+            .values()
+            .any(|a| a.entities.iter().any(|e| e == entity_id))
     }
 
-    pub(crate) fn despawn(&mut self, entity_id: &EntityId) {
-        self.entities
-            .swap_remove(match self.get_entity_index(entity_id) {
-                Some(index) => index,
-                None => panic!("Unable to find entity!"),
-            });
-    }
+    pub(crate) fn despawn(&mut self, entity_id: &EntityId) {}
 
     pub(crate) fn query(
-        &self,
+        &mut self,
         query_bitmask: &EntityBitmask,
         restrictions_bitmask: &EntityBitmask,
-    ) -> Box<[(EntityId, Box<[usize]>)]> {
-        self.entities
-            .iter()
-            .filter_map(|entity_info| {
-                if entity_info.is_valid_for_query(query_bitmask, restrictions_bitmask) {
-                    Some((
-                        entity_info.id,
-                        entity_info.component_indexes_from_bitmask(query_bitmask),
-                    ))
+    ) -> Box<[(&EntityBitmask, &mut Archetype)]> {
+        self.archetypes
+            .iter_mut()
+            .filter_map(|(bitmask, archetype)| {
+                if bitmask.matches_query(query_bitmask, restrictions_bitmask) {
+                    Some((bitmask, archetype))
                 } else {
                     None
                 }

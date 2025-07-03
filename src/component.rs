@@ -1,58 +1,20 @@
 use std::{
     any::TypeId,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
 };
 
-use any_vec::{any_value::AnyValueWrapper, AnyVec};
-use tinysimpleecs_rust_macros::implement_component_bundle;
+use any_vec::{AnyVec, any_value::AnyValueWrapper};
 
-use crate::{entity::EntityInfo, EntityId};
+use crate::{EntityId, EntityManager, entity::EntityBitmask};
+
+pub trait Component: std::fmt::Debug + 'static {}
 
 pub(crate) type ComponentId = usize;
-pub(crate) type ComponentIndex = usize;
-
-pub(crate) struct ComponentCollumn {
-    /// The id used for the bitmask
-    id: ComponentId,
-    data: AnyVec,
-}
-
-pub(crate) struct ComponentWrapper<C: Component> {
-    entity: EntityId,
-    component: C,
-}
-
-impl<C: Component> ComponentWrapper<C> {
-    pub(crate) fn new(entity: EntityId, component: C) -> Self {
-        Self { entity, component }
-    }
-}
-
-impl ComponentCollumn {
-    pub(crate) fn new<C: Component>(id: usize) -> Self {
-        let data = AnyVec::new::<ComponentWrapper<C>>();
-        ComponentCollumn { id, data }
-    }
-}
-
-impl Deref for ComponentCollumn {
-    type Target = AnyVec;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl DerefMut for ComponentCollumn {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
-    }
-}
-
 #[derive(Default)]
 pub struct ComponentManager {
-    components: HashMap<TypeId, ComponentCollumn>,
+    components: HashMap<TypeId, ComponentId>,
     last_used_id: ComponentId,
 }
 
@@ -69,17 +31,13 @@ impl ComponentManager {
 
     pub(crate) fn register_component_unchecked<C: Component>(&mut self) -> ComponentId {
         let id = self.get_new_id();
-        let result = self
-            .components
-            .insert(TypeId::of::<C>(), ComponentCollumn::new::<C>(id));
+        let result = self.components.insert(TypeId::of::<C>(), id);
         debug_assert!(result.is_none());
         id
     }
 
     pub(crate) fn get_component_id<C: Component>(&self) -> Option<ComponentId> {
-        self.components
-            .get(&TypeId::of::<C>())
-            .map(|collumn| collumn.id)
+        self.components.get(&TypeId::of::<C>()).map(|&id| id)
     }
 
     pub(crate) fn register_component_if_not_exists<C: Component>(&mut self) -> ComponentId {
@@ -87,57 +45,59 @@ impl ComponentManager {
             .unwrap_or_else(|| self.register_component_unchecked::<C>())
     }
 
-    pub(crate) fn add_component<C: Component>(
-        &mut self,
-        entity: EntityId,
-        component: C,
-    ) -> (ComponentId, ComponentIndex) {
-        let id = self.register_component_if_not_exists::<C>();
-        let collumn = self.components.get_mut(&TypeId::of::<C>()).unwrap();
-
-        if cfg!(debug_assertions) {
-            collumn.push(AnyValueWrapper::new(ComponentWrapper::new(
-                entity, component,
-            )));
-        } else {
-            unsafe {
-                collumn.push_unchecked(AnyValueWrapper::new(ComponentWrapper::new(
-                    entity, component,
-                )));
-            }
-        }
-
-        (id, collumn.len() - 1)
-    }
-
-    #[cfg(test)]
     pub(crate) fn component_exists<C: Component>(&self) -> bool {
         self.components.contains_key(&TypeId::of::<C>())
     }
-
-    pub(crate) fn get_from_index<C: Component>(&mut self, index: usize) -> Option<&mut C> {
-        if let Some(collumn) = self.components.get_mut(&TypeId::of::<C>()) {
-            return collumn.get_mut(index).map(|mut element_ref| {
-                &mut element_ref
-                    .downcast_mut::<ComponentWrapper<C>>()
-                    .unwrap()
-                    .component
-            });
-        }
-        None
-    }
-    // #[cfg(test)]
-    // pub(crate) fn get_component_id<C: Component>(&self, _component: C) -> Option<ComponentId> {
-    //     self.components
-    //         .get(&TypeId::of::<C>())
-    //         .map(|collumn| collumn.id)
-    // }
 }
-
-pub trait Component: std::fmt::Debug + 'static {}
 
 pub trait ComponentBundle {
-    fn add(self, entity: EntityId, manager: &mut ComponentManager) -> EntityInfo;
+    fn spawn(
+        self,
+        id: EntityId,
+        entity_manager: &mut EntityManager,
+        component_manager: &mut ComponentManager,
+    );
 }
 
-variadics_please::all_tuples!(implement_component_bundle, 0, 15, B);
+macro_rules! replace_expr {
+    ($_t:tt $sub:expr) => {
+        $sub
+    };
+}
+macro_rules! impl_component_bundle {
+    ($(($n:tt, $B:ident)),*) => {
+        impl<$($B: Component),*> ComponentBundle for ($($B,)*) {
+            fn spawn(
+                self,
+                id: EntityId,
+                entity_manager: &mut EntityManager,
+                component_manager: &mut ComponentManager,
+            ) {
+                let len = <[()]>::len(&[$(replace_expr!($n ())),*]);
+                let mut bitmask = EntityBitmask::default();
+                let mut components_btree = BTreeMap::<usize, usize>::new();
+                $({
+                    let id = component_manager.register_component_if_not_exists::<$B>();
+                    let previous = components_btree.insert(id, $n);
+                    debug_assert!(previous.is_none(), "duplicate component type in entity");
+
+                    bitmask.insert(id);
+                })*
+
+                let components_order: HashMap<usize, usize> = components_btree.into_iter().enumerate().map(|(i, (_, v))| (v, i)).collect();
+
+                let mut default_columns = Box::<[fn() -> AnyVec]>::new_uninit_slice(len);
+                let mut inserters = Box::<[Box<dyn FnOnce(&mut AnyVec)>]>::new_uninit_slice(len);
+                $({
+                    let current_index = components_order[&$n];
+                    default_columns[current_index].write(|| AnyVec::new::<$B>());
+                    inserters[current_index].write(Box::new(|v: &mut AnyVec| v.push(AnyValueWrapper::new(self.$n))));
+                })*
+
+                entity_manager.add_entity(id, bitmask, unsafe {default_columns.assume_init()}, unsafe {inserters.assume_init()});
+            }
+        }
+    };
+}
+
+variadics_please::all_tuples_enumerated!(impl_component_bundle, 0, 15, B);

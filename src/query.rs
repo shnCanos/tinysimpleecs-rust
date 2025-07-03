@@ -1,44 +1,42 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{
+    collections::{BTreeMap, HashMap},
+    marker::PhantomData,
+};
 
 use crate::{
+    EntityManager, SystemWorldArgs,
     component::{ComponentId, ComponentManager},
-    entity::{EntityBitmask, EntityId},
+    entity::{ComponentColumns, EntityBitmask, EntityId},
     system::{SafetyInfo, SystemParam},
-    SystemWorldArgs,
 };
 
 pub(crate) struct QueryInfo {
     pub(crate) query_bitmask: EntityBitmask,
     pub(crate) restrictions_bitmask: EntityBitmask,
-    query_order: ComponentOrder,
 }
 
 impl QueryInfo {
-    pub(crate) fn new(
-        query_bitmask: EntityBitmask,
-        restrictions_bitmask: EntityBitmask,
-        query_order: ComponentOrder,
-    ) -> Self {
+    pub(crate) fn new(query_bitmask: EntityBitmask, restrictions_bitmask: EntityBitmask) -> Self {
         Self {
             query_bitmask,
             restrictions_bitmask,
-            query_order,
         }
     }
 
     pub(crate) fn from_query<V: QueryBundle, R: QueryBundle>(
         components_manager: &mut ComponentManager,
     ) -> Self {
-        let (query_bitmask, query_order) = V::into_bitmask(components_manager);
-        let (restrictions_bitmask, _) = R::into_bitmask(components_manager);
+        let query_bitmask = V::into_bitmask(components_manager);
+        let restrictions_bitmask = R::into_bitmask(components_manager);
         let new_info = Self {
             query_bitmask,
             restrictions_bitmask,
-            query_order,
         };
-        debug_assert!(new_info
-            .query_bitmask
-            .is_disjoint(&new_info.restrictions_bitmask));
+        debug_assert!(
+            new_info
+                .query_bitmask
+                .is_disjoint(&new_info.restrictions_bitmask)
+        );
         new_info
     }
 }
@@ -82,19 +80,28 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
         let info: QueryInfo =
             QueryInfo::from_query::<Values, Restrictions>((*args).components_manager);
         // NOTE: The results are ordered by component_id
-        let indexes_slice = (*args)
+        let archetypes = (*args)
             .entity_manager
             .query(&info.query_bitmask, &info.restrictions_bitmask);
 
-        let result = indexes_slice
+        let result = archetypes
+            .into_vec()
             .into_iter()
-            .map(|(entity, indexes)| QueryResult {
-                entity: *entity,
-                components: Values::from_indexes(
-                    &info.query_order,
-                    indexes,
-                    (*args).components_manager,
-                ),
+            .flat_map(|(bitmask, archetype)| {
+                let archetype_order = Values::into_order((*args).components_manager, bitmask);
+                archetype
+                    .entities
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &entity)| QueryResult {
+                        entity,
+                        components: Values::from_columns(
+                            i,
+                            &archetype_order,
+                            &mut archetype.component_columns as *mut ComponentColumns,
+                        ),
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect();
 
@@ -109,15 +116,20 @@ impl<'a, Values: QueryBundle, Restrictions: QueryBundle> SystemParam
     }
 }
 
-type ComponentOrder = HashMap<ComponentId, usize>;
+type ComponentOrder = Box<[usize]>;
 pub trait QueryBundle {
     type ResultType<'a>;
-    fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder);
+    fn into_bitmask(component_manager: &mut ComponentManager) -> EntityBitmask;
+    // NOTE: it is assumed that every component already exists when this function is called
+    fn into_order(
+        component_manager: &ComponentManager,
+        other_bitmask: &EntityBitmask,
+    ) -> ComponentOrder;
     /// SAFETY: Cannot have two queries with the same component at the same time or multiple mutable references to the same value is possible.
-    unsafe fn from_indexes<'a>(
-        order: &ComponentOrder,
-        indexes: &[usize],
-        component_manager: *mut ComponentManager,
+    unsafe fn from_columns<'a>(
+        index: usize,
+        archetype_order: &ComponentOrder,
+        columns: *mut ComponentColumns,
     ) -> Self::ResultType<'a>;
 }
 
@@ -126,34 +138,45 @@ macro_rules! impl_query_bundle {
         impl<$($Q: crate::component::Component),*> QueryBundle for ($($Q,)*) {
             type ResultType<'a> = ($(&'a mut $Q,)*);
             #[allow(unused_assignments, unused_variables, unused_mut)]
-            fn into_bitmask(component_manager: &mut ComponentManager) -> (EntityBitmask, ComponentOrder) {
-                let mut bitset = ::bit_set::BitSet::new();
-                let mut order = ::std::collections::HashMap::new();
-                let mut current_index = 0;
+            fn into_bitmask(component_manager: &mut ComponentManager) -> EntityBitmask {
+                let mut bitset = bit_set::BitSet::new();
 
                 $(
                     let id = component_manager.register_component_if_not_exists::<$Q>();
                     let had_inserted = bitset.insert(id);
                     debug_assert!(had_inserted, "duplicate component type in query");
-
-                    order.insert(id, current_index);
-                    current_index += 1;
                 )*
 
-                (bitset.into(), order)
+                bitset.into()
+            }
+
+            fn into_order(component_manager: &ComponentManager, other_bitmask: &EntityBitmask) -> ComponentOrder {
+                // TODO: use corret size instead of vector
+                let mut order = Vec::new();
+                let mut iterator = other_bitmask.iter().enumerate();
+                $({
+                    let current_id = component_manager.get_component_id::<$Q>().unwrap();
+                    while let Some((i, id)) = iterator.next() {
+                        if current_id == id {
+                            order.push(i);
+                            break;
+                        }
+                    }
+                })*
+                order.into_boxed_slice()
             }
 
             #[allow(clippy::unused_unit)]
             #[allow(unused_assignments, unused_variables, unused_mut, invalid_value)]
-            unsafe fn from_indexes<'a>(
-                order: &ComponentOrder,
-                indexes: &[usize],
-                component_manager: *mut ComponentManager,
+            unsafe fn from_columns<'a>(
+                index: usize,
+                archetype_order: &ComponentOrder,
+                columns: *mut ComponentColumns,
             ) -> Self::ResultType<'a> {
+                // SAFETY: All fields are initialized in the lines below
                 let mut newtuple: Self::ResultType<'a> = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
                 $({
-                    let current_id = (*component_manager).get_component_id::<$Q>().unwrap();
-                    newtuple.$n = (*component_manager).get_from_index::<$Q>(indexes[order[&current_id]]).unwrap();
+                    newtuple.$n = (*columns).get_mut_from_column::<$Q>(archetype_order[$n], index).unwrap();
                 })*
                 newtuple
             }
