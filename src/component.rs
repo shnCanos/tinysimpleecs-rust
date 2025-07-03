@@ -7,7 +7,7 @@ use any_vec::{AnyVec, any_value::AnyValueWrapper};
 
 use crate::{EntityId, EntityManager, entity::EntityBitmask};
 
-pub trait Component: std::fmt::Debug + 'static {}
+pub trait Component: 'static {}
 
 pub(crate) type ComponentId = usize;
 #[derive(Default)]
