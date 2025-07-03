@@ -289,10 +289,15 @@ mod tests {
     fn test_query_banana2_after_modification() {
         let mut world = dummy_world();
 
+        // SAFETY: The two queries mustn't be alive at the same time
         {
-            let query: Query<(Banana2,), ()> =
+            let mut query: Query<(Banana2,), ()> =
                 unsafe { Query::init(&mut SystemWorldArgs::from_world(&mut world)) };
-            query.results[1].components.0.0 += 1;
+            for result in &mut query.results {
+                if result.components.0.0 == 24 {
+                    result.components.0.0 += 1;
+                }
+            }
         }
 
         let query: Query<(Banana2,), ()> =
