@@ -18,7 +18,7 @@
         devShells = {
           default = pkgs.mkShell {
             packages = with pkgs; [
-              cargo
+              rustup
               cargo-expand
             ];
 
@@ -37,7 +37,7 @@
               libGLU
             ];
             packages = with pkgs; [
-              cargo
+              rustup
             ];
 
             CARGO_TERM_COLOR = "always";
